@@ -7,6 +7,7 @@ It provides:
 - The two-line project, Git, model, thinking, context, and diff footer.
 - `/clear` as a fresh-session command while hiding `/new` from completion.
 - `/answer` and `Ctrl+.` for answering questions from the last assistant response.
+- `/note` and native tools for searching, reading, creating, and appending Apple Notes.
 - Isolated MCP access for Linear, Exa, Better Stack, Ecotone, Context7, and Slack.
 - A model-aware `/effort` picker and direct thinking-level commands.
 - Completion notifications outside Herdr. Herdr owns notifications inside Herdr.

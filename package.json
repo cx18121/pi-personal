@@ -1,6 +1,6 @@
 {
   "name": "@cx18121/pi-personal",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "keywords": [
@@ -29,6 +29,7 @@
   "pi": {
     "extensions": [
       "./extensions/answer.ts",
+      "./extensions/apple-notes.ts",
       "./extensions/clear-command.ts",
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",

@@ -8,6 +8,7 @@ It provides:
 - `/clear` as a fresh-session command while hiding `/new` from completion.
 - `/answer` and `Ctrl+.` for answering questions from the last assistant response.
 - Isolated MCP access for Linear, Exa, Better Stack, Ecotone, Context7, and Slack.
+- A model-aware `/effort` picker and direct thinking-level commands.
 - Completion notifications outside Herdr. Herdr owns notifications inside Herdr.
 - Compact image attachment rows based on pi-paster 0.2.3.
 

@@ -7,11 +7,12 @@ It provides:
 - The two-line project, Git, model, thinking, context, and diff footer.
 - `/clear` as a fresh-session command while hiding `/new` from completion.
 - `/answer` and `Ctrl+.` for answering questions from the last assistant response.
-- `/note` and native tools for searching, reading, creating, and appending Apple Notes.
+- `/note` and native tools for searching, reading, saving, and creating Apple Notes.
+- `/btw` for quick tool-free side questions and `/side` for context-aware Herdr sessions.
 - Isolated MCP access for Linear, Exa, Better Stack, Ecotone, Context7, and Slack.
 - A model-aware `/effort` picker and direct thinking-level commands.
 - Completion notifications outside Herdr. Herdr owns notifications inside Herdr.
-- Compact image attachment rows based on pi-paster 0.2.3.
+- Compact image attachment rows and readable autocomplete descriptions based on pi-paster 0.2.3.
 
 Secrets and OAuth tokens are not stored here. The Slack client secret stays in macOS Keychain under `pi-slack-mcp-client-secret`.
 

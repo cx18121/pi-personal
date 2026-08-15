@@ -1,5 +1,5 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
+import type { AutocompleteProvider, EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { describeReject, replaceImagePathsInText } from "./image-utils.ts";
 import type { AttachmentStore } from "./store.ts";
 import type { ImageAttachment } from "./types.ts";
@@ -10,6 +10,31 @@ const PLACEHOLDER_REGEX = /\[#image \d+\]/g;
 const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+const AUTOCOMPLETE_SOURCE_PREFIX = /^\[(?:u|p|t)(?::[^\]]+)?\]\s*/;
+const FAKE_CURSOR = /\x1b\[7m(.*?)\x1b\[(?:0|27)m/g;
+
+function compactAutocompleteProvider(provider: AutocompleteProvider): AutocompleteProvider {
+  const shouldTriggerFileCompletion = provider.shouldTriggerFileCompletion?.bind(provider);
+
+  return {
+    triggerCharacters: provider.triggerCharacters,
+    getSuggestions: async (lines, cursorLine, cursorCol, options) => {
+      const suggestions = await provider.getSuggestions(lines, cursorLine, cursorCol, options);
+      if (!suggestions) return null;
+
+      return {
+        ...suggestions,
+        items: suggestions.items.map((item) => ({
+          ...item,
+          description: item.description?.replace(AUTOCOMPLETE_SOURCE_PREFIX, ""),
+        })),
+      };
+    },
+    applyCompletion: (lines, cursorLine, cursorCol, item, prefix) =>
+      provider.applyCompletion(lines, cursorLine, cursorCol, item, prefix),
+    ...(shouldTriggerFileCompletion && { shouldTriggerFileCompletion }),
+  };
+}
 
 interface AtomicSpan {
   start: number;
@@ -136,6 +161,15 @@ export class PasterEditor extends CustomEditor {
     this.onPasteImage = () => {
       void this.handlePasteClipboardImage();
     };
+  }
+
+  override setAutocompleteProvider(provider: AutocompleteProvider): void {
+    super.setAutocompleteProvider(compactAutocompleteProvider(provider));
+  }
+
+  override render(width: number): string[] {
+    const lines = super.render(width);
+    return this.focused ? lines : lines.map((line) => line.replace(FAKE_CURSOR, "$1"));
   }
 
   override insertTextAtCursor(text: string): void {

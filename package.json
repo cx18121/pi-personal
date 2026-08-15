@@ -1,6 +1,6 @@
 {
   "name": "@cx18121/pi-personal",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "keywords": [
@@ -37,7 +37,9 @@
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/notify.ts",
+      "./extensions/reminders.ts",
       "./extensions/side-conversations.ts",
+      "./extensions/time.ts",
       "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts"
     ]

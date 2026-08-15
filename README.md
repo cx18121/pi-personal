@@ -8,6 +8,8 @@ It provides:
 - `/clear` as a fresh-session command while hiding `/new` from completion.
 - `/answer` and `Ctrl+.` for answering questions from the last assistant response.
 - `/note` and native tools for searching, reading, saving, and creating Apple Notes.
+- `/reminders` and a native tool for browsing and managing Apple Reminders through the default list and existing lists.
+- A read-only time tool for local date, time zone, and elapsed Pi session time.
 - `/btw` for quick tool-free side questions and `/side` for context-aware Herdr sessions.
 - Isolated MCP access for Linear, Exa, Better Stack, Ecotone, Context7, and Slack.
 - A model-aware `/effort` picker and direct thinking-level commands.

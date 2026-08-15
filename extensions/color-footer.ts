@@ -133,6 +133,7 @@ export default function (pi: ExtensionAPI) {
 					const model = theme.bold(theme.fg("customMessageLabel", ctx.model?.id ?? "no model"));
 					const thinkingLevel = pi.getThinkingLevel();
 					const thinking = theme.fg(thinkingColor(thinkingLevel), thinkingLevel);
+					const fastMode = footerData.getExtensionStatuses().get("fast-mode");
 					const context = ctx.getContextUsage();
 					const contextPercent = context?.percent;
 					const roundedContext = contextPercent === null || contextPercent === undefined
@@ -151,7 +152,7 @@ export default function (pi: ExtensionAPI) {
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
 					const status = [
-						`${model} ${thinking}`,
+						[model, thinking, fastMode].filter(Boolean).join(" "),
 						`${contextBar} ${contextLabel}`,
 						worktreeDiff,
 					].filter(Boolean).join(separator);

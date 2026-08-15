@@ -1,6 +1,6 @@
 {
   "name": "@cx18121/pi-personal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "keywords": [
@@ -34,6 +34,7 @@
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
       "./extensions/effort.ts",
+      "./extensions/fast-mode.ts",
       "./extensions/notify.ts",
       "./extensions/side-conversations.ts",
       "./vendor/pi-paster/src/index.ts"

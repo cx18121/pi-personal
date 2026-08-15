@@ -4,13 +4,14 @@ This package contains Charlie's personal Pi extensions.
 
 It provides:
 
-- The two-line project, Git, model, thinking, context, and diff footer.
+- The two-line project, Git, model, thinking, Fast mode, context, and diff footer.
 - `/clear` as a fresh-session command while hiding `/new` from completion.
 - `/answer` and `Ctrl+.` for answering questions from the last assistant response.
 - `/note` and native tools for searching, reading, saving, and creating Apple Notes.
 - `/btw` for quick tool-free side questions and `/side` for context-aware Herdr sessions.
 - Isolated MCP access for Linear, Exa, Better Stack, Ecotone, Context7, and Slack.
 - A model-aware `/effort` picker and direct thinking-level commands.
+- `/fast` for session-persistent OpenAI Fast mode on supported API and ChatGPT OAuth models.
 - Completion notifications outside Herdr. Herdr owns notifications inside Herdr.
 - Compact image attachment rows and readable autocomplete descriptions based on pi-paster 0.2.3.
 

@@ -7,6 +7,7 @@
     "pi-package"
   ],
   "dependencies": {
+    "minisearch": "7.2.0",
     "pi-mcp-adapter": "2.25.0",
     "sharp": "0.35.3"
   },
@@ -37,6 +38,7 @@
       "./extensions/fast-mode.ts",
       "./extensions/notify.ts",
       "./extensions/side-conversations.ts",
+      "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts"
     ]
   }

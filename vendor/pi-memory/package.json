@@ -1,0 +1,38 @@
+{
+  "name": "pi-memory",
+  "version": "0.4.2-local.1",
+  "private": true,
+  "description": "Local Markdown-only memory fork for Pi",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jayzeng/pi-memory.git"
+  },
+  "upstream": {
+    "version": "0.4.2",
+    "commit": "39e6b998a2279c8fad4a2c6c64e26828c1d6023e"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "bun test ./test/memory.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "minisearch": "7.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

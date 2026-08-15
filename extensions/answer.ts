@@ -26,9 +26,15 @@ import {
 } from "@earendil-works/pi-tui";
 
 // Structured output format for question extraction
+interface ExtractedOption {
+	label: string;
+	text: string;
+}
+
 interface ExtractedQuestion {
 	question: string;
 	context?: string;
+	options?: ExtractedOption[];
 }
 
 interface ExtractionResult {
@@ -47,7 +53,11 @@ Output a JSON object with this structure:
   "questions": [
     {
       "question": "The question text",
-      "context": "Optional context that helps answer the question"
+      "context": "Optional context that helps answer the question",
+      "options": [
+        { "label": "A", "text": "First choice" },
+        { "label": "B", "text": "Second choice" }
+      ]
     }
   ]
 }
@@ -57,6 +67,8 @@ Rules:
 - Keep questions in the order they appeared
 - Be concise with question text
 - Include context only when it provides essential information for answering
+- When a question has listed choices, preserve every choice in options with its original letter or number as label; use 1, 2, 3 when choices are unlabeled
+- Omit options when the question is open-ended
 - If no questions are found, return {"questions": []}
 
 Example output:
@@ -64,7 +76,11 @@ Example output:
   "questions": [
     {
       "question": "What is your preferred database?",
-      "context": "We can only configure MySQL and PostgreSQL because of what is implemented."
+      "context": "We can only configure MySQL and PostgreSQL because of what is implemented.",
+      "options": [
+        { "label": "A", "text": "MySQL" },
+        { "label": "B", "text": "PostgreSQL" }
+      ]
     },
     {
       "question": "Should we use TypeScript or JavaScript?"
@@ -106,39 +122,65 @@ async function selectExtractionModel(
 	return haikuModel;
 }
 
-function toExtractedQuestion(value: unknown): ExtractedQuestion | null {
-	if (typeof value !== "object" || value === null) {
+function toExtractedOption(value: unknown): ExtractedOption | null {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("label" in value) ||
+		!("text" in value) ||
+		typeof value.label !== "string" ||
+		typeof value.text !== "string"
+	) {
 		return null;
 	}
-	const record = value as Record<string, unknown>;
-	const question = record.question;
-	const context = record.context;
+
+	return { label: value.label, text: value.text };
+}
+
+function toExtractedQuestion(value: unknown): ExtractedQuestion | null {
+	if (typeof value !== "object" || value === null || !("question" in value)) {
+		return null;
+	}
+
+	const { question } = value;
+	const context = "context" in value ? value.context : undefined;
+	const options = "options" in value ? value.options : undefined;
 	if (typeof question !== "string") {
 		return null;
 	}
 	if (context !== undefined && context !== null && typeof context !== "string") {
 		return null;
 	}
-	return typeof context === "string" && context.length > 0 ? { question, context } : { question };
+	if (options !== undefined && options !== null && !Array.isArray(options)) {
+		return null;
+	}
+
+	const parsedOptions = options?.map(toExtractedOption) ?? [];
+	if (parsedOptions.some((option) => option === null)) {
+		return null;
+	}
+
+	const result: ExtractedQuestion = { question };
+	if (typeof context === "string" && context.length > 0) {
+		result.context = context;
+	}
+	if (parsedOptions.length > 0) {
+		result.options = parsedOptions.filter((option): option is ExtractedOption => option !== null);
+	}
+	return result;
 }
 
 function toExtractionResult(value: unknown): ExtractionResult | null {
-	if (typeof value !== "object" || value === null) {
+	if (typeof value !== "object" || value === null || !("questions" in value) || !Array.isArray(value.questions)) {
 		return null;
 	}
-	const record = value as Record<string, unknown>;
-	if (!Array.isArray(record.questions)) {
+
+	const questions = value.questions.map(toExtractedQuestion);
+	if (questions.some((question) => question === null)) {
 		return null;
 	}
-	const questions: ExtractedQuestion[] = [];
-	for (const question of record.questions) {
-		const extractedQuestion = toExtractedQuestion(question);
-		if (!extractedQuestion) {
-			return null;
-		}
-		questions.push(extractedQuestion);
-	}
-	return { questions };
+
+	return { questions: questions.filter((question): question is ExtractedQuestion => question !== null) };
 }
 
 /**
@@ -258,6 +300,9 @@ class QnAComponent implements Component {
 			parts.push(`Q: ${q.question}`);
 			if (q.context) {
 				parts.push(`> ${q.context}`);
+			}
+			if (q.options) {
+				parts.push(...q.options.map((option) => `${option.label}. ${option.text}`));
 			}
 			parts.push(`A: ${a}`);
 			parts.push("");
@@ -421,6 +466,17 @@ class QnAComponent implements Component {
 			}
 		}
 
+		if (q.options) {
+			lines.push(padToWidth(emptyBoxLine()));
+			for (const option of q.options) {
+				const optionText = `${this.bold(this.cyan(option.label))}. ${option.text}`;
+				const wrappedOption = wrapTextWithAnsi(optionText, contentWidth - 2);
+				for (const line of wrappedOption) {
+					lines.push(padToWidth(boxLine(line)));
+				}
+			}
+		}
+
 		lines.push(padToWidth(emptyBoxLine()));
 
 		// Render the editor component (multi-line input) with padding
@@ -447,7 +503,8 @@ class QnAComponent implements Component {
 			lines.push(padToWidth(boxLine(truncateToWidth(confirmMsg, contentWidth))));
 		} else {
 			lines.push(padToWidth(this.dim("├" + horizontalLine(boxWidth - 2) + "┤")));
-			const controls = `${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
+			const answerHint = q.options ? `${this.dim("Type")} letter/number · ` : "";
+			const controls = `${answerHint}${this.dim("Tab/Enter")} next · ${this.dim("Shift+Tab")} prev · ${this.dim("Shift+Enter")} newline · ${this.dim("Esc")} cancel`;
 			lines.push(padToWidth(boxLine(truncateToWidth(controls, contentWidth))));
 		}
 		lines.push(padToWidth(this.dim("╰" + horizontalLine(boxWidth - 2) + "╯")));

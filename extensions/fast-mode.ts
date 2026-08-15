@@ -59,9 +59,8 @@ export default function (pi: ExtensionAPI) {
 	const updateStatus = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
-		const supported = currentModelSupportsFastMode(ctx);
-		const status = isEnabled(ctx)
-			? ctx.ui.theme.fg(supported ? "accent" : "warning", supported ? "fast" : "fast?")
+		const status = isEnabled(ctx) && currentModelSupportsFastMode(ctx)
+			? ctx.ui.theme.fg("accent", "fast")
 			: undefined;
 		ctx.ui.setStatus(FAST_MODE_STATUS, status);
 	};

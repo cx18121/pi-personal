@@ -139,14 +139,14 @@ export default function (pi: ExtensionAPI) {
 					const roundedContext = contextPercent === null || contextPercent === undefined
 						? undefined
 						: Math.round(contextPercent);
-					const contextColor = roundedContext !== undefined && roundedContext > 80
-						? "error"
-						: roundedContext !== undefined && roundedContext > 50
-							? "warning"
-							: "success";
+					const formatContext = (text: string) => {
+						if (roundedContext !== undefined && roundedContext > 80) return theme.fg("error", text);
+						if (roundedContext !== undefined && roundedContext > 50) return `\u001b[38;2;214;162;67m${text}\u001b[39m`;
+						return theme.fg("success", text);
+					};
 					const filled = roundedContext === undefined ? 0 : Math.max(0, Math.min(10, Math.round(roundedContext / 10)));
-					const contextBar = `${theme.fg(contextColor, "█".repeat(filled))}${theme.fg("borderMuted", "█".repeat(10 - filled))}`;
-					const contextLabel = theme.fg(contextColor, roundedContext === undefined ? "?" : `${roundedContext}%`);
+					const contextBar = `${formatContext("█".repeat(filled))}${theme.fg("borderMuted", "█".repeat(10 - filled))}`;
+					const contextLabel = formatContext(roundedContext === undefined ? "?" : `${roundedContext}%`);
 					const worktreeDiff = [
 						repoStats.additions > 0 ? theme.fg("success", `+${repoStats.additions}`) : "",
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",

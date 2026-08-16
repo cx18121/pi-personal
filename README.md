@@ -38,8 +38,3 @@ npm install
 pi install "$HOME/Projects/personal/pi-personal"
 ```
 
-Reload Pi after installation.
-
-## Secrets
-
-This repository does not store secrets or OAuth tokens. The Slack client secret stays in macOS Keychain under `pi-slack-mcp-client-secret`.

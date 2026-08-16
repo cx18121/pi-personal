@@ -42,7 +42,8 @@
       "./extensions/superset.ts",
       "./extensions/time.ts",
       "./vendor/pi-memory/src/index.ts",
-      "./vendor/pi-paster/src/index.ts"
+      "./vendor/pi-paster/src/index.ts",
+      "./extensions/prompt-restore.ts"
     ]
   }
 }

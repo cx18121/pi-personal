@@ -12,6 +12,7 @@ This package contains my personal Pi extensions and integrations
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
 - [`extensions/fast-mode.ts`](extensions/fast-mode.ts) adds `/fast` for using OpenAI Priority processing on supported OpenAI API and ChatGPT OAuth models. The setting is saved in the current session.
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
+- [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
 - [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
 - [`extensions/superset.ts`](extensions/superset.ts) reports Pi session activity and input requests to Superset when Pi runs inside a Superset terminal.

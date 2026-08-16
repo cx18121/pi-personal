@@ -14,7 +14,6 @@ import {
   memoryFilePath,
   mutateChecklist,
   readText,
-  replaceNowFromCompactionSummary,
   resolveAgentRole,
   resolveLocations,
   resolveScope,
@@ -57,15 +56,6 @@ export default function registerMemory(pi: ExtensionAPI) {
     const { locations, role } = runtime(ctx);
     const context = buildStartupContext({ locations, role, autoCapture: autoCaptureEnabled() });
     return { systemPrompt: `${event.systemPrompt}\n\n${context}` };
-  });
-
-  pi.on("session_compact", async (event, ctx) => {
-    const { locations, role } = runtime(ctx);
-    if (role !== "root" || !locations.projectDir) return;
-    replaceNowFromCompactionSummary(
-      path.join(locations.projectDir, "SCRATCHPAD.md"),
-      event.compactionEntry.summary,
-    );
   });
 
   pi.registerTool({

@@ -11,12 +11,11 @@ import {
   buildStartupContext,
   checklistFilePath,
   ensurePrivateDir,
-  extractUnfinishedWork,
   forgetMemory,
+  legacyProjectId,
   mutateChecklist,
   parseChecklist,
   readText,
-  replaceNowSection,
   resolveAgentRole,
   resolveLocations,
   resolveMemoryDir,
@@ -71,6 +70,110 @@ describe("project identity and scope", () => {
     const linked = resolveProjectIdentity(worktree);
     expect(main).not.toBeNull();
     expect(linked).toEqual(main);
+  });
+
+  test("keeps identity after a repository moves", () => {
+    const original = path.join(tempDir, "original");
+    const moved = path.join(tempDir, "moved");
+    fs.mkdirSync(original);
+    Bun.spawnSync(["git", "init", "-q"], { cwd: original });
+
+    const before = resolveProjectIdentity(original)!;
+    fs.renameSync(original, moved);
+    const after = resolveProjectIdentity(moved)!;
+
+    expect(after.id).toBe(before.id);
+    expect(after.commonRoot).toBe(fs.realpathSync(moved));
+  });
+
+  test("assigns unrelated clones distinct identities", () => {
+    git("init", "-q");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    fs.writeFileSync(path.join(tempDir, "file"), "x");
+    git("add", "file");
+    git("commit", "-qm", "initial");
+    const first = resolveProjectIdentity(tempDir)!;
+    const clone = path.join(tempDir, "clone");
+    Bun.spawnSync(["git", "clone", "-q", tempDir, clone], { cwd: tempDir });
+
+    expect(resolveProjectIdentity(clone)!.id).not.toBe(first.id);
+  });
+
+  test("migrates every project file from the path-based identity", () => {
+    git("init", "-q");
+    const memoryDir = path.join(tempDir, "memory");
+    const legacyDir = path.join(memoryDir, "projects", legacyProjectId(tempDir));
+    writeMemory({ dir: legacyDir, content: "memory from the path-based identity" });
+    atomicWriteFile(checklistFilePath(legacyDir, "scratchpad"), "- [ ] migrated task\n");
+    atomicWriteFile(checklistFilePath(legacyDir, "papercuts"), "- [ ] migrated papercut\n");
+
+    const locations = resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir });
+
+    expect(locations.projectDir).not.toBe(legacyDir);
+    expect(readText(path.join(locations.projectDir!, "MEMORY.md"))).toContain("path-based identity");
+    expect(readText(checklistFilePath(locations.projectDir!, "scratchpad"))).toContain("migrated task");
+    expect(readText(checklistFilePath(locations.projectDir!, "papercuts"))).toContain("migrated papercut");
+    expect(fs.existsSync(legacyDir)).toBe(false);
+  });
+
+  test("rejects an invalid configured project identity", () => {
+    git("init", "-q");
+    git("config", "--local", "pi.memory-id", "../../shared");
+    expect(() => resolveProjectIdentity(tempDir)).toThrow("one valid project ID");
+  });
+
+  test("uses the legacy identity when uninitialized Git metadata is read-only", () => {
+    git("init", "-q");
+    const gitDir = path.join(tempDir, ".git");
+    fs.chmodSync(gitDir, 0o500);
+    try {
+      expect(resolveProjectIdentity(tempDir)!.id).toBe(legacyProjectId(tempDir));
+    } finally {
+      fs.chmodSync(gitDir, 0o700);
+    }
+  });
+
+  test("keeps a configured stable identity when Git metadata becomes read-only", () => {
+    git("init", "-q");
+    const initialized = resolveProjectIdentity(tempDir)!;
+    const gitDir = path.join(tempDir, ".git");
+    fs.chmodSync(gitDir, 0o500);
+    try {
+      expect(resolveProjectIdentity(tempDir)!.id).toBe(initialized.id);
+    } finally {
+      fs.chmodSync(gitDir, 0o700);
+    }
+  });
+
+  test("does not fall back to a path identity on initialization lock contention", () => {
+    git("init", "-q");
+    const lockDir = path.join(tempDir, ".git", "pi-memory-id.lock");
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(
+      path.join(lockDir, "owner.json"),
+      JSON.stringify({ pid: process.pid, token: "live-initializer" }),
+    );
+    try {
+      expect(() => resolveProjectIdentity(tempDir)).toThrow("Timed out initializing");
+    } finally {
+      fs.rmSync(lockDir, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses to hide a legacy directory when stable memory already exists", () => {
+    git("init", "-q");
+    const memoryDir = path.join(tempDir, "memory");
+    const first = resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir });
+    writeMemory({ dir: first.projectDir!, content: "stable memory" });
+    const legacyDir = path.join(memoryDir, "projects", legacyProjectId(tempDir));
+    writeMemory({ dir: legacyDir, content: "legacy memory" });
+
+    expect(() => resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir })).toThrow(
+      "refusing to hide or merge data",
+    );
+    expect(readText(path.join(first.projectDir!, "MEMORY.md"))).toContain("stable memory");
+    expect(readText(path.join(legacyDir, "MEMORY.md"))).toContain("legacy memory");
   });
 
   test("falls back to global outside Git and rejects project scope", () => {
@@ -500,6 +603,7 @@ describe("startup context and compaction handoff", () => {
         },
         registerTool() {},
       } as any);
+      expect(hooks.has("session_compact")).toBe(false);
       const beforeAgentStart = hooks.get("before_agent_start")!;
       const context = (cwd: string) => ({ cwd, sessionManager: { getSessionId: () => "same-session" } });
       const first = await beforeAgentStart({ systemPrompt: "base" }, context(repos[0])) as { systemPrompt: string };
@@ -511,48 +615,6 @@ describe("startup context and compaction handoff", () => {
     } finally {
       if (oldMemoryDir === undefined) delete process.env.PI_MEMORY_DIR;
       else process.env.PI_MEMORY_DIR = oldMemoryDir;
-    }
-  });
-
-  test("wires the real session_compact event and compactionEntry.summary shape", async () => {
-    git("init", "-q");
-    const memoryDir = path.join(tempDir, "memory");
-    const oldMemoryDir = process.env.PI_MEMORY_DIR;
-    const oldMode = process.env.PI_MEMORY_SUBAGENT_MODE;
-    process.env.PI_MEMORY_DIR = memoryDir;
-    process.env.PI_MEMORY_SUBAGENT_MODE = "root";
-    try {
-      const hooks = new Map<string, (event: any, ctx: any) => unknown>();
-      registerMemory({
-        on(event: string, handler: (event: any, ctx: any) => unknown) {
-          hooks.set(event, handler);
-        },
-        registerTool() {},
-      } as any);
-      expect(hooks.has("session_compact")).toBe(true);
-      expect(hooks.has("session_before_compact")).toBe(false);
-
-      const locations = resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir });
-      const scratchpadPath = path.join(locations.projectDir!, "SCRATCHPAD.md");
-      atomicWriteFile(scratchpadPath, "# Scratchpad\n\n## Now\n\nold work\n\n## Later\n\nkeep\n");
-      await hooks.get("session_compact")!(
-        {
-          type: "session_compact",
-          compactionEntry: {
-            summary: "## In Progress\n- finish hook test\n\n## Notes\ndo not copy",
-          },
-        },
-        { cwd: tempDir, sessionManager: { getSessionId: () => "session" } },
-      );
-      const content = readText(scratchpadPath);
-      expect(content).toContain("## Now\n\n- finish hook test");
-      expect(content).not.toContain("do not copy");
-      expect(content).toContain("## Later\n\nkeep");
-    } finally {
-      if (oldMemoryDir === undefined) delete process.env.PI_MEMORY_DIR;
-      else process.env.PI_MEMORY_DIR = oldMemoryDir;
-      if (oldMode === undefined) delete process.env.PI_MEMORY_SUBAGENT_MODE;
-      else process.env.PI_MEMORY_SUBAGENT_MODE = oldMode;
     }
   });
 
@@ -597,16 +659,8 @@ describe("startup context and compaction handoff", () => {
     expect(context).not.toContain("x".repeat(100));
   });
 
-  test("extracts unfinished sections and replaces only Now", () => {
-    const summary = "## Done\n- shipped\n\n## In Progress\n- wire tests\n\n## Next Steps\n1. validate\n\n## Notes\nfull history";
-    expect(extractUnfinishedWork(summary)).toBe("- wire tests\n\n1. validate");
+  test("reads the active scratchpad section", () => {
     expect(scratchpadNowSection("# Scratchpad\n\n## Now\n\nresume this\n\n## Later\n\nnot this\n")).toBe("resume this");
     expect(scratchpadNowSection("## Now\n\nNone.\n")).toBe("");
-    const existing = "# Scratchpad\n\n## Now\n\nold item\n\n## Later\n\nkeep this\n";
-    const replaced = replaceNowSection(existing, extractUnfinishedWork(summary));
-    expect(replaced).toContain("## Now\n\n- wire tests\n\n1. validate");
-    expect(replaced).toContain("## Later\n\nkeep this");
-    expect(replaced).not.toContain("old item");
-    expect(replaced).not.toContain("full history");
   });
 });

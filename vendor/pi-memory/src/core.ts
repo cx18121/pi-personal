@@ -12,6 +12,8 @@ const LOCK_STALE_MS = 30_000;
 const TOPIC_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RECOVERY_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHECKBOX_REGEX = /^- \[([ xX])\] (.+)$/;
+const PROJECT_ID_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,63})-[0-9a-f]{10}$/;
+const PROJECT_ID_CONFIG_KEY = "pi.memory-id";
 
 export type MemoryScope = "global" | "project";
 export type AgentRole = "root" | "subagent";
@@ -101,25 +103,132 @@ export function sanitizeProjectName(name: string) {
   return sanitized || "project";
 }
 
-export function resolveProjectIdentity(cwd: string): ProjectIdentity | null {
+function gitCommonDir(cwd: string) {
   try {
     const commonGitDir = execFileSync(
       "git",
       ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
-    if (!commonGitDir) return null;
-    const canonicalGitDir = realpathIfPossible(commonGitDir);
-    const commonRoot = canonicalGitDir.endsWith(`${path.sep}.git`)
-      ? path.dirname(canonicalGitDir)
-      : canonicalGitDir;
-    const canonicalRoot = realpathIfPossible(commonRoot);
-    const name = sanitizeProjectName(path.basename(canonicalRoot));
-    const hash = createHash("sha256").update(canonicalRoot).digest("hex").slice(0, 10);
-    return { commonRoot: canonicalRoot, name, hash, id: `${name}-${hash}` };
+    return commonGitDir ? realpathIfPossible(commonGitDir) : null;
   } catch {
     return null;
   }
+}
+
+class InvalidProjectIdentityError extends Error {}
+class ProjectIdentityInitializationTimeoutError extends Error {}
+class ProjectIdentityUnavailableError extends Error {}
+
+function readConfiguredProjectId(cwd: string) {
+  try {
+    const values = execFileSync(
+      "git",
+      ["-C", cwd, "config", "--local", "--get-all", PROJECT_ID_CONFIG_KEY],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim().split("\n").filter(Boolean);
+    if (values.length !== 1 || !PROJECT_ID_REGEX.test(values[0])) {
+      throw new InvalidProjectIdentityError(
+        `Git config ${PROJECT_ID_CONFIG_KEY} must contain one valid project ID.`,
+      );
+    }
+    return values[0];
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return null;
+    throw error;
+  }
+}
+
+function withRepositoryIdentityLock<T>(commonGitDir: string, operation: () => T) {
+  const lockDir = path.join(commonGitDir, "pi-memory-id.lock");
+  const owner: LockOwner = { pid: process.pid, token: randomUUID() };
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  while (!tryAcquireLock(lockDir, owner)) {
+    const staleToken = staleLockToken(lockDir);
+    if (staleToken !== undefined) removeLockIfTokenMatches(lockDir, staleToken);
+    if (Date.now() >= deadline) {
+      throw new ProjectIdentityInitializationTimeoutError(
+        `Timed out initializing project memory identity: ${commonGitDir}`,
+      );
+    }
+    sleepSync(LOCK_RETRY_MS);
+  }
+  try {
+    return operation();
+  } finally {
+    removeLockIfTokenMatches(lockDir, owner.token);
+  }
+}
+
+function configuredProjectId(cwd: string, commonGitDir: string, name: string) {
+  const configured = readConfiguredProjectId(cwd);
+  if (configured) return configured;
+  try {
+    return withRepositoryIdentityLock(commonGitDir, () => {
+      const initialized = readConfiguredProjectId(cwd);
+      if (initialized) return initialized;
+      const id = `${name}-${randomUUID().replaceAll("-", "").slice(0, 10)}`;
+      execFileSync(
+        "git",
+        ["-C", cwd, "config", "--local", "--replace-all", PROJECT_ID_CONFIG_KEY, id],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      return id;
+    });
+  } catch (error) {
+    if (
+      error instanceof InvalidProjectIdentityError
+      || error instanceof ProjectIdentityInitializationTimeoutError
+    ) {
+      throw error;
+    }
+    throw new ProjectIdentityUnavailableError("Git metadata is not writable.", { cause: error });
+  }
+}
+
+export function legacyProjectId(commonRoot: string) {
+  const canonicalRoot = realpathIfPossible(commonRoot);
+  const name = sanitizeProjectName(path.basename(canonicalRoot));
+  const hash = createHash("sha256").update(canonicalRoot).digest("hex").slice(0, 10);
+  return `${name}-${hash}`;
+}
+
+export function resolveProjectIdentity(cwd: string): ProjectIdentity | null {
+  const commonGitDir = gitCommonDir(cwd);
+  if (!commonGitDir) return null;
+  const commonRoot = commonGitDir.endsWith(`${path.sep}.git`)
+    ? path.dirname(commonGitDir)
+    : commonGitDir;
+  const canonicalRoot = realpathIfPossible(commonRoot);
+  const currentName = sanitizeProjectName(path.basename(canonicalRoot));
+  let id: string;
+  try {
+    id = configuredProjectId(cwd, commonGitDir, currentName);
+  } catch (error) {
+    if (!(error instanceof ProjectIdentityUnavailableError)) throw error;
+    id = legacyProjectId(canonicalRoot);
+  }
+  const hash = id.slice(-10);
+  const name = id.slice(0, -11);
+  return { commonRoot: canonicalRoot, name, hash, id };
+}
+
+function migrateLegacyProjectDir(baseDir: string, project: ProjectIdentity) {
+  const projectDir = path.join(baseDir, "projects", project.id);
+  const legacyDir = path.join(baseDir, "projects", legacyProjectId(project.commonRoot));
+  if (legacyDir === projectDir || !fs.existsSync(legacyDir)) return projectDir;
+  if (fs.existsSync(projectDir)) {
+    throw new Error(
+      `Both stable and legacy project memory exist; refusing to hide or merge data: ${projectDir}, ${legacyDir}`,
+    );
+  }
+  ensurePrivateDir(path.dirname(projectDir));
+  try {
+    fs.renameSync(legacyDir, projectDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return projectDir;
 }
 
 export function resolveLocations(
@@ -132,7 +241,7 @@ export function resolveLocations(
     baseDir,
     globalDir: path.join(baseDir, "global"),
     project,
-    projectDir: project ? path.join(baseDir, "projects", project.id) : null,
+    projectDir: project ? migrateLegacyProjectDir(baseDir, project) : null,
   };
 }
 
@@ -734,48 +843,6 @@ export function buildStartupContext(options: {
     ...capture,
     ...body,
   ].join("\n\n");
-}
-
-export function replaceNowSection(content: string, unfinishedWork: string) {
-  const replacement = ["## Now", "", unfinishedWork.trim()];
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const start = lines.findIndex((line) => /^## Now[ \t]*$/.test(line));
-  if (start >= 0) {
-    const nextHeading = lines.findIndex((line, index) => index > start && /^##[ \t]+/.test(line));
-    const end = nextHeading >= 0 ? nextHeading : lines.length;
-    lines.splice(start, end - start, ...replacement, "");
-    return `${lines.join("\n").trimEnd()}\n`;
-  }
-  return `${content.trimEnd()}${content.trim() ? "\n\n" : ""}${replacement.join("\n")}\n`;
-}
-
-export function extractUnfinishedWork(summary: string) {
-  const lines = summary.replace(/\r\n?/g, "\n").split("\n");
-  const sections: string[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    const heading = lines[index].match(/^(#{2,4})\s+(In Progress|Next Steps|Blocked|Open (?:Items|Questions)|Unfinished(?: Work)?)\s*$/i);
-    if (!heading) continue;
-    const level = heading[1].length;
-    const body: string[] = [];
-    for (index += 1; index < lines.length; index++) {
-      const nextHeading = lines[index].match(/^(#{1,6})\s+/);
-      if (nextHeading && nextHeading[1].length <= level) {
-        index -= 1;
-        break;
-      }
-      body.push(lines[index]);
-    }
-    const trimmed = body.join("\n").trim();
-    if (trimmed && !/^none\.?$/i.test(trimmed)) sections.push(trimmed);
-  }
-  return sections.join("\n\n").trim();
-}
-
-export function replaceNowFromCompactionSummary(filePath: string, summary: string) {
-  const unfinished = extractUnfinishedWork(summary);
-  if (!unfinished) return false;
-  mutateText(filePath, (content) => replaceNowSection(content, unfinished));
-  return true;
 }
 
 export function listTopics(dir: string) {

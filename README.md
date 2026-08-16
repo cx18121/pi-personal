@@ -1,6 +1,6 @@
-# Personal Pi package
 
-This package contains Charlie's personal Pi extensions and integrations.
+
+This package contains my personal Pi extensions and integrations
 
 ## Extensions
 

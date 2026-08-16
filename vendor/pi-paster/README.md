@@ -2,7 +2,7 @@
 
 `paster` is a pi extension that turns pasted, drag-dropped, or clipboard-provided images into first-class image attachments.
 
-Instead of leaving raw local image paths in your prompt, paster replaces them with readable placeholders such as `[#image 1]` and attaches the matching image content to the same user turn.
+Instead of leaving raw local image paths in your prompt, paster replaces them with readable placeholders such as `[#Image 1]` and attaches the matching image content to the same user turn.
 
 ## Preview
 
@@ -17,7 +17,7 @@ Terminal image workflows are awkward: dragging a screenshot into a terminal usua
 `paster` makes image input feel native in pi interactive mode:
 
 1. Paste or drag/drop an image path into the editor.
-2. The path is replaced with a placeholder like `[#image 1]`.
+2. The path is replaced with a placeholder like `[#Image 1]`.
 3. The image is stored in memory immediately.
 4. When you submit, pi sends your text with the placeholder plus the actual image attachment.
 5. The submitted image is rendered back in the conversation so you can confirm what was attached.
@@ -69,13 +69,13 @@ Then paste or drag/drop an image path:
 The editor will insert:
 
 ```text
-[#image 1]
+[#Image 1]
 ```
 
 You can also write normal text around it:
 
 ```text
-What is wrong in this screenshot? [#image 1]
+What is wrong in this screenshot? [#Image 1]
 ```
 
 On submit, the text and matching image attachment are sent together.

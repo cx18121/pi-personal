@@ -1,5 +1,10 @@
 import type { ImageAttachment } from "./types.ts";
 
+export interface AttachmentReservation {
+  id: number;
+  placeholder: string;
+}
+
 export class AttachmentStore {
   private nextId = 1;
   private readonly attachments = new Map<string, ImageAttachment>();
@@ -13,12 +18,18 @@ export class AttachmentStore {
     return [...this.attachments.values()].sort((a, b) => a.id - b.id);
   }
 
-  add(input: Omit<ImageAttachment, "id" | "placeholder" | "createdAt">): ImageAttachment {
+  reserve(): AttachmentReservation {
     const id = this.nextId++;
+    return { id, placeholder: `[#Image ${id}]` };
+  }
+
+  add(
+    input: Omit<ImageAttachment, "id" | "placeholder" | "createdAt">,
+    reservation = this.reserve(),
+  ): ImageAttachment {
     const attachment: ImageAttachment = {
       ...input,
-      id,
-      placeholder: `[#image ${id}]`,
+      ...reservation,
       createdAt: Date.now(),
     };
     this.attachments.set(attachment.placeholder, attachment);

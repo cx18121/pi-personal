@@ -1,12 +1,12 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider, EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { describeReject, replaceImagePathsInText } from "./image-utils.ts";
-import type { AttachmentStore } from "./store.ts";
+import type { AttachmentReservation, AttachmentStore } from "./store.ts";
 import type { ImageAttachment } from "./types.ts";
 
 export const PASTE_START = "\x1b[200~";
 export const PASTE_END = "\x1b[201~";
-const PLACEHOLDER_REGEX = /\[#image \d+\]/g;
+const PLACEHOLDER_REGEX = /\[#Image \d+\]/g;
 const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
@@ -150,10 +150,9 @@ export class PasterEditor extends CustomEditor {
       notify: (message: string) => void;
       deletePlaceholderAsBlock: boolean;
       setCursorPreview: (attachment: ImageAttachment | undefined) => void;
-      pasteClipboardImage?: () =>
-        | Promise<ImageAttachment | undefined>
-        | ImageAttachment
-        | undefined;
+      pasteClipboardImage?: (
+        reservation: AttachmentReservation,
+      ) => Promise<ImageAttachment | undefined> | ImageAttachment | undefined;
     },
   ) {
     super(tui, theme, pasterKeybindings);
@@ -205,9 +204,18 @@ export class PasterEditor extends CustomEditor {
   }
 
   private async handlePasteClipboardImage(): Promise<void> {
-    const attachment = await this.pasterOptions.pasteClipboardImage?.();
-    if (!attachment) return;
-    super.insertTextAtCursor(attachment.placeholder);
+    const pasteClipboardImage = this.pasterOptions.pasteClipboardImage;
+    if (!pasteClipboardImage) return;
+
+    const reservation = this.pasterOptions.store.reserve();
+    const insertion = this.getCursor();
+    super.insertTextAtCursor(reservation.placeholder);
+    this.updateCursorPreview();
+    this.tui.requestRender(true);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const attachment = await pasteClipboardImage(reservation);
+    if (!attachment) this.removePlaceholderAt(reservation.placeholder, insertion);
     this.updateCursorPreview();
     this.tui.requestRender();
   }
@@ -292,6 +300,24 @@ export class PasterEditor extends CustomEditor {
     this.deleteLineRange(target.line, target.start, target.end);
     this.updateCursorPreview();
     return true;
+  }
+
+  private removePlaceholderAt(placeholder: string, insertion: EditorCursor): void {
+    const editor = this as unknown as EditorStateAccess;
+    const line = editor.state.lines[insertion.line] ?? "";
+    const start = line.indexOf(placeholder, insertion.col);
+    if (start === -1) return;
+
+    const end = start + placeholder.length;
+    editor.state.lines[insertion.line] = line.slice(0, start) + line.slice(end);
+    if (editor.state.cursorLine === insertion.line) {
+      if (editor.state.cursorCol > end) editor.state.cursorCol -= placeholder.length;
+      else if (editor.state.cursorCol >= start) editor.state.cursorCol = start;
+    }
+    editor.lastAction = null;
+    editor.historyIndex = -1;
+    this.onChange?.(this.getText());
+    this.tui.requestRender();
   }
 
   private setCursor(col: number): void {

@@ -103,7 +103,7 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
         store,
         notify: (message) => ctx.ui.notify(message, "warning"),
         deletePlaceholderAsBlock: resolvedConfig.customEditor.deletePlaceholderAsBlock,
-        pasteClipboardImage: () => {
+        pasteClipboardImage: (reservation) => {
           const result = readClipboardImage();
           if (!result.ok) {
             if (result.reason !== "empty" && result.reason !== "unsupported-platform") {
@@ -111,7 +111,7 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
             }
             return undefined;
           }
-          return store.add(result.image);
+          return store.add(result.image, reservation);
         },
         setCursorPreview: (attachment) => {
           if (!resolvedConfig.customEditor.showImagePreview) return;

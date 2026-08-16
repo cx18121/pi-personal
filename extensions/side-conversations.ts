@@ -108,6 +108,19 @@ const findPaneId = (value: unknown): string | undefined => {
     .find((paneId) => paneId !== undefined);
 };
 
+const findSupersetTerminalId = (value: unknown): string | undefined => {
+  if (!isRecord(value)) return undefined;
+  if (value.kind === "terminal" && typeof value.sessionId === "string") return value.sessionId;
+
+  return Object.values(value)
+    .map(findSupersetTerminalId)
+    .find((sessionId) => sessionId !== undefined);
+};
+
+const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+
+class SideSessionStillRunningError extends Error {}
+
 interface HerdrAgent {
   cwd: string;
   name: string;
@@ -286,15 +299,18 @@ export default function (pi: ExtensionAPI) {
   let thinkingFrame = 0;
   let thinkingTimer: ReturnType<typeof setInterval> | undefined;
 
-  const runHerdr = async (args: string[], timeout = 30_000) => {
-    const result = await pi.exec("herdr", args, { timeout });
+  const runHostCommand = async (command: string, args: string[], timeout: number) => {
+    const result = await pi.exec(command, args, { timeout });
     if (result.code !== 0) {
-      throw new Error(result.stderr.trim() || result.stdout.trim() || `herdr ${args.join(" ")} failed`);
+      throw new Error(result.stderr.trim() || result.stdout.trim() || `${command} ${args.join(" ")} failed`);
     }
     return result.stdout;
   };
 
-  const startSideAgent = async (paneId: string, sessionPath: string | undefined, name: string) => {
+  const runHerdr = (args: string[], timeout = 30_000) => runHostCommand("herdr", args, timeout);
+  const runSuperset = (args: string[], timeout = 30_000) => runHostCommand("superset", args, timeout);
+
+  const startHerdrSideAgent = async (paneId: string, sessionPath: string | undefined, name: string) => {
     const piArgs = [
       ...(sessionPath ? ["--session", sessionPath] : []),
       "--name",
@@ -395,44 +411,153 @@ export default function (pi: ExtensionAPI) {
     return "";
   };
 
-  const launchSide = async (prompt: string, ctx: ExtensionContext, seedTurns: CompletedBtwTurn[] = []) => {
-    const parentPaneId = process.env.HERDR_PANE_ID;
-    if (!parentPaneId) {
-      ctx.ui.notify("/side requires a Pi session running inside Herdr", "error");
-      return false;
+  const createSideSession = (
+    prompt: string,
+    name: string,
+    ctx: ExtensionContext,
+    seedTurns: CompletedBtwTurn[],
+  ) => {
+    const leafId = ctx.sessionManager.getLeafId();
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    const sessionPath = leafId && sessionFile
+      ? SessionManager.open(sessionFile).createBranchedSession(leafId)
+      : undefined;
+
+    if (sessionPath) {
+      const sideSession = SessionManager.open(sessionPath);
+      sideSession.appendSessionInfo(name);
+      sideSession.appendCustomMessageEntry("side-session", SIDE_SYSTEM_PROMPT, false);
     }
 
-    const name = `side-${randomUUID().slice(0, 6)}`;
-    let paneId: string | undefined;
-    let sessionPath: string | undefined;
+    return {
+      effectivePrompt: seedSideConversation(prompt, sessionPath, seedTurns),
+      sessionPath,
+    };
+  };
 
-    ctx.ui.notify("Opening side session…", "info");
+  const launchHerdrSide = async (
+    parentPaneId: string,
+    sessionPath: string | undefined,
+    effectivePrompt: string,
+    name: string,
+    ctx: ExtensionContext,
+  ) => {
+    const splitOutput = await splitForSide(parentPaneId, ctx);
+    const parsedSplitOutput: unknown = JSON.parse(splitOutput);
+    const paneId = findPaneId(parsedSplitOutput);
+    if (!paneId) throw new Error("Herdr did not return the new pane id");
 
     try {
-      const leafId = ctx.sessionManager.getLeafId();
-      const sessionFile = ctx.sessionManager.getSessionFile();
-      sessionPath = leafId && sessionFile
-        ? SessionManager.open(sessionFile).createBranchedSession(leafId)
-        : undefined;
-      const effectivePrompt = seedSideConversation(prompt, sessionPath, seedTurns);
-      const splitOutput = await splitForSide(parentPaneId, ctx);
-      const parsedSplitOutput: unknown = JSON.parse(splitOutput);
-      paneId = findPaneId(parsedSplitOutput);
-      if (!paneId) throw new Error("Herdr did not return the new pane id");
-
-      await startSideAgent(paneId, sessionPath, name);
-
+      await startHerdrSideAgent(paneId, sessionPath, name);
       if (effectivePrompt) {
         await runHerdr(["agent", "prompt", paneId, effectivePrompt], 10_000);
       }
+      return name;
+    } catch (error) {
+      const closeResult = await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5_000 });
+      if (closeResult.code !== 0) {
+        const message = closeResult.stderr.trim() || closeResult.stdout.trim() || "Herdr could not close the side pane";
+        throw new SideSessionStillRunningError(`${error instanceof Error ? error.message : String(error)}. ${message}`);
+      }
+      throw error;
+    }
+  };
 
-      ctx.ui.notify(`Opened ${name}`, "info");
+  const launchSupersetSide = async (
+    workspaceId: string,
+    sessionPath: string | undefined,
+    effectivePrompt: string,
+  ) => {
+    if (!sessionPath) {
+      throw new Error("/side needs a saved Pi session before Superset can resume it");
+    }
+
+    const sessionId = SessionManager.open(sessionPath).getSessionId();
+    const output = await runSuperset([
+      "agents",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--agent",
+      "pi",
+      "--resume-session",
+      sessionId,
+      "--json",
+    ], 35_000);
+    const parsedOutput: unknown = JSON.parse(output);
+    const terminalId = findSupersetTerminalId(parsedOutput);
+    if (!terminalId) throw new Error("Superset did not return the new terminal id");
+    if (!effectivePrompt) return terminalId;
+
+    try {
+      await runSuperset([
+        "terminals",
+        "send",
+        "--workspace",
+        workspaceId,
+        "--terminal",
+        terminalId,
+        "--text",
+        effectivePrompt,
+        "--json",
+      ], 10_000);
+      return terminalId;
+    } catch (error) {
+      const closeResult = await pi.exec("superset", [
+        "terminals",
+        "close",
+        "--workspace",
+        workspaceId,
+        "--terminal",
+        terminalId,
+        "--json",
+      ], { timeout: 10_000 });
+      if (closeResult.code !== 0) {
+        const message = closeResult.stderr.trim() || closeResult.stdout.trim() || "Superset could not close the side terminal";
+        throw new SideSessionStillRunningError(`${error instanceof Error ? error.message : String(error)}. ${message}`);
+      }
+      throw error;
+    }
+  };
+
+  const showTerminalFallback = (
+    sessionPath: string | undefined,
+    effectivePrompt: string,
+    ctx: ExtensionContext,
+  ) => {
+    if (!sessionPath) {
+      throw new Error("/side needs a saved Pi session when no supported terminal host is available");
+    }
+
+    const command = `pi --session ${shellQuote(sessionPath)}`;
+    ctx.ui.setWidget("side-session-launch", [
+      "Side session ready. Run this in another terminal:",
+      command,
+      ...(effectivePrompt ? ["Then submit this prompt:", effectivePrompt] : []),
+    ]);
+    return "side session command";
+  };
+
+  const launchSide = async (prompt: string, ctx: ExtensionContext, seedTurns: CompletedBtwTurn[] = []) => {
+    const name = `side-${randomUUID().slice(0, 6)}`;
+    let sessionPath: string | undefined;
+
+    ctx.ui.setWidget("side-session-launch", undefined);
+    ctx.ui.notify("Opening side session…", "info");
+
+    try {
+      const sideSession = createSideSession(prompt, name, ctx, seedTurns);
+      sessionPath = sideSession.sessionPath;
+      const opened = process.env.SUPERSET_WORKSPACE_ID
+        ? await launchSupersetSide(process.env.SUPERSET_WORKSPACE_ID, sessionPath, sideSession.effectivePrompt)
+        : process.env.HERDR_PANE_ID
+          ? await launchHerdrSide(process.env.HERDR_PANE_ID, sessionPath, sideSession.effectivePrompt, name, ctx)
+          : showTerminalFallback(sessionPath, sideSession.effectivePrompt, ctx);
+
+      ctx.ui.notify(`Opened ${opened}`, "info");
       return true;
     } catch (error) {
-      if (paneId) {
-        await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5_000 });
-      }
-      if (sessionPath) {
+      if (sessionPath && !(error instanceof SideSessionStillRunningError)) {
         await unlink(sessionPath).catch(() => undefined);
       }
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
@@ -646,8 +771,9 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", (_event, ctx) => {
     closeDrawer();
+    ctx.ui.setWidget("side-session-launch", undefined);
   });
 
   pi.registerShortcut(FOCUS_SHORTCUT, {
@@ -669,7 +795,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("side", {
-    description: "Open a context-aware Pi session in a Herdr side pane",
+    description: "Open a context-aware Pi side session",
     handler: async (args, ctx) => {
       await launchSide(args.trim(), ctx);
     },

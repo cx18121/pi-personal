@@ -23,9 +23,9 @@ Secrets and OAuth tokens are not stored here. The Slack client secret stays in m
 ## Install
 
 ```bash
-cd ~/dotfiles/pi/package
+cd ~/Projects/personal/pi-personal
 npm install
-pi install "$HOME/dotfiles/pi/package"
+pi install "$HOME/Projects/personal/pi-personal"
 ```
 
 Reload Pi after installation.

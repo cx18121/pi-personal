@@ -74,12 +74,15 @@ export function resolveMemoryDir(env: MemoryEnvironment = process.env) {
   return path.join(home, ".pi", "agent", "memory");
 }
 
-export function resolveAgentRole(env: MemoryEnvironment = process.env): AgentRole {
+export function resolveAgentRole(
+  env: MemoryEnvironment = process.env,
+  currentSessionId?: string,
+): AgentRole {
   const forced = env.PI_MEMORY_SUBAGENT_MODE?.trim().toLowerCase();
   if (forced === "root" || forced === "subagent") return forced;
   if (env.PI_SUBAGENT_CHILD?.trim() === "1") return "subagent";
   const parent = env.PI_SUBAGENT_PARENT_SESSION?.trim();
-  const session = env.PI_SESSION_ID?.trim();
+  const session = currentSessionId?.trim() ?? env.PI_SESSION_ID?.trim();
   return parent && parent !== session ? "subagent" : "root";
 }
 

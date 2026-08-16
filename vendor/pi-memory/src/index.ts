@@ -43,7 +43,7 @@ function errorResult(error: unknown) {
 function runtime(ctx: ExtensionContext) {
   return {
     locations: resolveLocations(ctx.cwd),
-    role: resolveAgentRole(),
+    role: resolveAgentRole(process.env, ctx.sessionManager.getSessionId()),
   };
 }
 

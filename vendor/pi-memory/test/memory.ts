@@ -85,6 +85,7 @@ describe("roles and permissions", () => {
   test("detects root and subagent roles with explicit overrides", () => {
     expect(resolveAgentRole({ PI_SESSION_ID: "a" })).toBe("root");
     expect(resolveAgentRole({ PI_SESSION_ID: "a", PI_SUBAGENT_PARENT_SESSION: "a" })).toBe("root");
+    expect(resolveAgentRole({ PI_SUBAGENT_PARENT_SESSION: "a" }, "a")).toBe("root");
     expect(resolveAgentRole({ PI_SUBAGENT_CHILD: "1", PI_SESSION_ID: "same", PI_SUBAGENT_PARENT_SESSION: "same" })).toBe("subagent");
     expect(resolveAgentRole({ PI_SESSION_ID: "child", PI_SUBAGENT_PARENT_SESSION: "parent" })).toBe("subagent");
     expect(resolveAgentRole({ PI_MEMORY_SUBAGENT_MODE: "root", PI_SUBAGENT_CHILD: "1" })).toBe("root");

@@ -11,6 +11,7 @@ This package contains my personal Pi extensions and integrations
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
 - [`extensions/fast-mode.ts`](extensions/fast-mode.ts) adds `/fast` for using OpenAI Priority processing on supported OpenAI API and ChatGPT OAuth models. The setting is saved in the current session.
+- [`extensions/inline-skills.ts`](extensions/inline-skills.ts) loads skills from short `/name` tokens anywhere in a prompt. It replaces Pi's native `/skill:name` skill completion with the same short form at the start of a prompt.
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
 - [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
 - [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
@@ -39,6 +40,7 @@ Most of this package was written for my own setup. These parts have a direct ups
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) and [`extensions/notify.ts`](extensions/notify.ts) started from Pi's [`custom-footer.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/examples/extensions/custom-footer.ts) and [`notify.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/examples/extensions/notify.ts) examples. Their current behavior is customized for this setup.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) is a local configuration wrapper around [`pi-mcp-adapter`](https://github.com/nicobailon/pi-mcp-adapter).
 - [`extensions/effort.ts`](extensions/effort.ts) is a new implementation inspired by [`pi-effort`](https://github.com/ricardofrantz/pi-effort), updated for the current Pi model and thinking APIs.
+- [`extensions/inline-skills.ts`](extensions/inline-skills.ts) is a customized copy of Tifan Dwi Avianto's [`@tifan/pi-inline-skills`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-inline-skills).
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) grew from the side-channel workflow in [`pi-btw`](https://github.com/dbachelder/pi-btw). The tool-free drawer and external `/side` session are custom implementations.
 - [`vendor/pi-memory`](vendor/pi-memory/README.md) is a local Markdown-only fork of Jay Zeng's [`pi-memory`](https://github.com/jayzeng/pi-memory).
 - [`vendor/pi-paster`](vendor/pi-paster/README.md) is a bundled and customized copy of [`pi-paster`](https://github.com/beowulf11/pi-paster).

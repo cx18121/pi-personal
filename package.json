@@ -36,6 +36,7 @@
       "./extensions/core-mcp.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
+      "./extensions/inline-skills.ts",
       "./extensions/notify.ts",
       "./extensions/reminders.ts",
       "./extensions/side-conversations.ts",

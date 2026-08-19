@@ -81,7 +81,9 @@ export default function registerMemory(pi: ExtensionAPI) {
           content: params.content,
           sessionId: ctx.sessionManager.getSessionId(),
         });
-        return textResult(`Stored ${target} memory in ${filePath}.`, {
+        const destination =
+          target === "topic" ? `${state.scope} topic "${params.topic}"` : `${state.scope} MEMORY.md`;
+        return textResult(`Saved to ${destination}:\n\n${params.content}`, {
           path: filePath,
           scope: state.scope,
           target,

@@ -20,7 +20,7 @@ import {
 	type CxDirective,
 } from "../lib/cx.js";
 
-const resourceRoot = fileURLToPath(new URL("../resources/cx", import.meta.url));
+const resourceRoot = fileURLToPath(new URL("../resources", import.meta.url));
 const kernel = renderCxKernel(readFileSync(join(resourceRoot, "kernel.md"), "utf8"), resourceRoot);
 
 const directiveMessage = (directive: CxDirective) => ({

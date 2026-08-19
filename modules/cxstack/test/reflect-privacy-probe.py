@@ -10,7 +10,8 @@ import tempfile
 import time
 from pathlib import Path
 
-root = Path(__file__).resolve().parent.parent
+module_root = Path(__file__).resolve().parent.parent
+package_root = module_root.parent.parent
 subagents = Path.home() / '.pi/agent/npm/node_modules/pi-subagents'
 session_dir = Path(tempfile.mkdtemp(prefix='cxstack-privacy-sessions-', dir='/tmp'))
 memory_dir = Path(tempfile.mkdtemp(prefix='cxstack-privacy-memory-', dir='/tmp'))
@@ -68,7 +69,7 @@ def tool_calls(rows, start):
     return calls
 
 
-project_before = file_inventory(root, excluded={'.git', 'node_modules'})
+project_before = file_inventory(package_root, excluded={'.git', 'node_modules'})
 global_skills_root = Path.home() / '.agents/skills'
 global_skills_before = file_inventory(global_skills_root) if global_skills_root.exists() else {}
 global_context_path = Path.home() / '.pi/agent/AGENTS.md'
@@ -79,14 +80,14 @@ env = os.environ.copy()
 env['PI_MEMORY_DIR'] = str(memory_dir)
 args = [
     'pi', '--mode', 'rpc', '--no-extensions',
-    '-e', str(root), '-e', str(subagents),
+    '-e', str(module_root), '-e', str(subagents),
     '--provider', 'openai-codex', '--model', 'gpt-5.6-sol',
     '--session-dir', str(session_dir),
 ]
 with log_path.open('w') as stderr:
     process = subprocess.Popen(
         args,
-        cwd=root,
+        cwd=package_root,
         env=env,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -168,7 +169,7 @@ mutation_tools = {'memory_write', 'papercut', 'write', 'edit', 'mcp'}
 child_sessions = sorted(session_dir.rglob('session.jsonl'))
 child_text = '\n'.join(path.read_text() for path in child_sessions)
 parent_text = parent.read_text()
-project_after = file_inventory(root, excluded={'.git', 'node_modules'})
+project_after = file_inventory(package_root, excluded={'.git', 'node_modules'})
 global_skills_after = file_inventory(global_skills_root) if global_skills_root.exists() else {}
 global_context_after = digest(global_context_path.read_bytes()) if global_context_path.exists() else None
 missions_after = file_inventory(mission_root) if mission_root.exists() else {}

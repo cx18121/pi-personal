@@ -58,6 +58,14 @@ Reflect proposes exact changes and waits for your selection. It does not write m
 
 Reflect works whether CX is active or not.
 
+## Improve CXStack
+
+Reflect can classify a confirmed recurring failure as a CXStack change. It checks whether architecture can remove the failure first, then whether an automated check can catch it. It changes guidance only when code cannot enforce the behavior.
+
+The parent reads this README and the current CXStack source, then shows the exact proposed patch. It waits for approval before editing. After approval, it applies only the selected change, runs focused checks, and tells you to reload.
+
+CXStack does not rewrite itself automatically.
+
 ## Try it
 
 Use your next small task with a clear expected result. State the delivery limit if it matters, e.g. `Do not push.`
@@ -76,10 +84,10 @@ After activation, send another prompt without `/cx`. Then try `/cx off`. At the 
 
 - [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command and Pi session events.
 - [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
-- [`resources/cx/kernel.md`](resources/cx/kernel.md) contains the compact active guidance.
-- [`resources/cx/references`](resources/cx/references/) contains guidance loaded only when useful.
+- [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
+- [`resources/references`](resources/references/) contains guidance loaded only when useful.
 - [`extensions/reflect.ts`](extensions/reflect.ts) owns the `/reflect` command.
 - [`resources/reflect.md`](resources/reflect.md) contains the private Reflect process.
-- [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/cx-extensions.test.mjs`](test/cx-extensions.test.mjs) cover the mechanical behavior.
+- [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/extensions.test.mjs`](test/extensions.test.mjs) cover the mechanical behavior.
 
-The detailed v0 design and review history remain in [`docs`](docs/). They are historical records, not a second source of runtime truth.
+The detailed v0 design and review history remain in [`docs`](../../docs/). They are historical records, not a second source of runtime truth.

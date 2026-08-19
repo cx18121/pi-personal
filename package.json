@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test ./test ./vendor/pi-memory/test && node ./test/cx-overflow-probe.mjs",
-    "typecheck": "tsc -p tsconfig.cxstack.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
+    "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test && node ./modules/cxstack/test/overflow-probe.mjs",
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -45,13 +45,13 @@
       "./extensions/clear-command.ts",
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
-      "./extensions/cx.ts",
+      "./modules/cxstack/extensions/cx.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/inline-skills.ts",
       "./extensions/notify.ts",
       "./extensions/reminders.ts",
-      "./extensions/reflect.ts",
+      "./modules/cxstack/extensions/reflect.ts",
       "./extensions/side-conversations.ts",
       "./extensions/superset.ts",
       "./extensions/time.ts",

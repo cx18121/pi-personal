@@ -18,7 +18,8 @@ import {
 	takeBeforeAgentDirective,
 } from "../lib/cx.ts";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const packageRoot = resolve(moduleRoot, "../..");
 const stateEntry = (active: boolean) => ({
 	type: "custom",
 	customType: CX_STATE_ENTRY,
@@ -133,13 +134,13 @@ describe("CX compaction", () => {
 
 describe("CX package resources", () => {
 	test("keeps the reviewed kernel and marker compact", () => {
-		const kernel = readFileSync(join(root, "resources/cx/kernel.md"), "utf8").trim();
+		const kernel = readFileSync(join(moduleRoot, "resources/kernel.md"), "utf8").trim();
 		expect(kernel.split(/\s+/).filter((word) => word !== "-")).toHaveLength(244);
 		expect(CX_MARKER.split(/\s+/)).toHaveLength(18);
 	});
 
 	test("resolves every kernel reference from the installed resource root", () => {
-		const resourceRoot = join(root, "resources/cx");
+		const resourceRoot = join(moduleRoot, "resources");
 		const kernel = renderCxKernel(
 			readFileSync(join(resourceRoot, "kernel.md"), "utf8"),
 			resourceRoot,
@@ -150,7 +151,7 @@ describe("CX package resources", () => {
 	});
 
 	test("routes Reflect through exact current complementary models", () => {
-		const reflect = readFileSync(join(root, "resources/reflect.md"), "utf8");
+		const reflect = readFileSync(join(moduleRoot, "resources/reflect.md"), "utf8");
 		expect(reflect).toContain("pi --list-models anthropic");
 		expect(reflect).toContain("anthropic/claude-fable-5");
 		expect(reflect).toContain("openai-codex/gpt-5.6-sol");
@@ -158,11 +159,11 @@ describe("CX package resources", () => {
 	});
 
 	test("registers extension commands without public skill bypasses", () => {
-		const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+		const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 		expect(manifest.pi.skills).toBeUndefined();
 		expect(manifest.pi.prompts).toBeUndefined();
-		expect(manifest.pi.extensions).toContain("./extensions/cx.ts");
-		expect(manifest.pi.extensions).toContain("./extensions/reflect.ts");
-		expect(existsSync(join(root, "skills/cx/SKILL.md"))).toBe(false);
+		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/cx.ts");
+		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/reflect.ts");
+		expect(existsSync(join(packageRoot, "skills/cx/SKILL.md"))).toBe(false);
 	});
 });

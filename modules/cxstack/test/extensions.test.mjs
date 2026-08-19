@@ -160,6 +160,8 @@ describe("Reflect extension wiring", () => {
 		const injected = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(injected.message.customType).toBe("reflect-instructions");
 		expect(injected.message.content).toContain("Wait for selection");
+		expect(injected.message.content).toContain("CXStack change.");
+		expect(injected.message.content).not.toContain("{{CXSTACK_ROOT}}");
 		expect(harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx)).toBeUndefined();
 	});
 });

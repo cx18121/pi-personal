@@ -9,12 +9,14 @@ This package contains my personal Pi extensions and integrations
 - [`extensions/clear-command.ts`](extensions/clear-command.ts) adds `/clear` for starting a session with no conversation context. It also hides `/new` from command completion.
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, Fast mode, context use, and diff size.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
+- [`extensions/cx.ts`](extensions/cx.ts) adds sticky `/cx` task ownership. It stores one session-wide boolean, injects a compact kernel only when needed, survives tree navigation and compaction, and uses `/cx off` for deterministic deactivation.
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
 - [`extensions/fast-mode.ts`](extensions/fast-mode.ts) adds `/fast` for using OpenAI Priority processing on supported OpenAI API and ChatGPT OAuth models. The setting is saved in the current session.
 - [`extensions/inline-skills.ts`](extensions/inline-skills.ts) loads skills from short `/name` tokens anywhere in a prompt. It replaces Pi's native `/skill:name` skill completion with the same short form at the start of a prompt.
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
 - [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
 - [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
+- [`extensions/reflect.ts`](extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and Charlie approves every durable write.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
 - [`extensions/superset.ts`](extensions/superset.ts) reports Pi session activity and input requests to Superset when Pi runs inside a Superset terminal.
 - [`extensions/time.ts`](extensions/time.ts) adds a read only tool that returns the local date, time, weekday, time zone, and elapsed session time.
@@ -26,10 +28,14 @@ This package contains my personal Pi extensions and integrations
 
 ## Support files
 
+- [`lib/cx.ts`](lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
 - [`lib/reminders.ts`](lib/reminders.ts) validates reminder data and groups reminders by date for the `/reminders` view.
 - [`lib/time-context.ts`](lib/time-context.ts) formats local time and calculates elapsed session time for the time tool.
 - [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.
 - [`scripts/apple-reminders.js`](scripts/apple-reminders.js) uses macOS automation to read and change Apple Reminders.
+- [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/cx-extensions.test.mjs`](test/cx-extensions.test.mjs) test CX command, session, compaction, packaging, and handler behavior.
+- [`test/cx-overflow-probe.mjs`](test/cx-overflow-probe.mjs) forces a synthetic Pi context overflow and verifies kernel delivery through retry.
+- [`test/reflect-privacy-probe.py`](test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check with synthetic data. It is manual because it makes real model calls.
 - [`test/time-reminders.test.ts`](test/time-reminders.test.ts) tests the shared time and reminder behavior.
 
 ## Origins

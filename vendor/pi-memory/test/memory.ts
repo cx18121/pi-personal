@@ -643,7 +643,11 @@ describe("startup context and compaction handoff", () => {
     expect(context).not.toContain("hidden topic fact");
     expect(context).not.toContain("hidden papercut");
     expect(context).toContain("visible memory_write tool calls");
-    expect(context).toContain("visible papercut add call");
+    expect(context).toContain("plausible structural improvement");
+    expect(context).toContain("explicit approval-gated review");
+    expect(context.indexOf("explicit approval-gated review")).toBeGreaterThan(
+      context.indexOf("visible memory_write tool calls"),
+    );
 
     const captureDisabled = buildStartupContext({ locations, role: "root", autoCapture: false });
     expect(captureDisabled).toContain("latest user correction override memory");

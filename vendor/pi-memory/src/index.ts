@@ -62,7 +62,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     name: "memory_write",
     label: "Memory Write",
     description:
-      "Visibly save a stable preference, correction, confirmed recurring fix, or useful fact to local Markdown. Current sources override memory. Prefer a concise MEMORY.md index and topic files for detail.",
+      "Visibly save a stable preference, correction, confirmed recurring fix, or useful fact to local Markdown. Current sources override memory. Prefer a concise MEMORY.md index and topic files for detail. During an explicit approval-gated review, propose the write and wait for selection.",
     parameters: Type.Object({
       scope: scopeSchema,
       target: Type.Optional(StringEnum(["memory", "topic"] as const)),
@@ -238,7 +238,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     name: "papercut",
     label: "Papercut",
     description:
-      "Report and manage small workflow friction. Add a retrieval papercut only when memory_search demonstrably misses or misranks a relevant memory; include the exact query, expected result, and evidence, but no secrets. Any agent may append or list; only root agents may edit, resolve, or clear items.",
+      "Report and manage small workflow friction. Add even a first occurrence when a tool, prompt, skill, helper, or repository change could plausibly prevent it. Include the activity, friction, and plausible structural improvement. Skip incidental mistakes with no structural lesson and never include secrets. During an explicit approval-gated review, propose the entry and wait for selection. Any agent may append or list; only root agents may edit, resolve, or clear items.",
     parameters: Type.Object({
       scope: scopeSchema,
       action: StringEnum(["add", "done", "undo", "clear_done", "list", "edit", "resolve"] as const),

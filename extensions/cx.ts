@@ -124,6 +124,7 @@ export default function registerCx(pi: ExtensionAPI) {
 				return;
 			}
 			if (decision.kind === "activate-task" || decision.kind === "task") {
+				ctx.ui.notify("CX active.", "info");
 				pi.sendUserMessage(decision.task);
 			}
 		},

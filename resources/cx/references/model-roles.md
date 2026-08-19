@@ -1,6 +1,6 @@
 # Model roles
 
-Keep the parent model Charlie opened. Do not switch it automatically.
+Keep the active parent model. Do not switch it automatically.
 
 Use child models only for bounded contributions that earn their cost. These are soft defaults:
 

@@ -1,6 +1,8 @@
+# pi-personal
 
+This package contains my personal Pi extensions and integrations.
 
-This package contains my personal Pi extensions and integrations
+See [`CXSTACK.md`](CXSTACK.md) for the `/cx` and `/reflect` work system.
 
 ## Extensions
 
@@ -16,7 +18,7 @@ This package contains my personal Pi extensions and integrations
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
 - [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
 - [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
-- [`extensions/reflect.ts`](extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and Charlie approves every durable write.
+- [`extensions/reflect.ts`](extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and approval is required before any durable write.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
 - [`extensions/superset.ts`](extensions/superset.ts) reports Pi session activity and input requests to Superset when Pi runs inside a Superset terminal.
 - [`extensions/time.ts`](extensions/time.ts) adds a read only tool that returns the local date, time, weekday, time zone, and elapsed session time.

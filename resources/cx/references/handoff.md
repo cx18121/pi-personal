@@ -1,6 +1,6 @@
 # Handoff
 
-Use the scratchpad only when unfinished work must survive a real session boundary. Examples include an explicit pause, Charlie leaving, a likely session end, or work that genuinely spans sessions. Compaction alone does not require a handoff.
+Use the scratchpad only when unfinished work must survive a real session boundary. Examples include an explicit pause, a likely session end, or work that genuinely spans sessions. Compaction alone does not require a handoff.
 
 Keep one current entry per unfinished outcome. Store only:
 

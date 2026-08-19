@@ -153,13 +153,13 @@ describe("Reflect extension wiring", () => {
 		await harness.commands.get("reflect").handler("tool choice", ctx);
 		expect(harness.userMessages).toEqual([
 			{
-				content: "Reflect on this session.\n\nFocus from Charlie:\ntool choice",
+				content: "Reflect on this session.\n\nFocus:\ntool choice",
 				options: undefined,
 			},
 		]);
 		const injected = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(injected.message.customType).toBe("reflect-instructions");
-		expect(injected.message.content).toContain("Wait for his selection");
+		expect(injected.message.content).toContain("Wait for selection");
 		expect(harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx)).toBeUndefined();
 	});
 });

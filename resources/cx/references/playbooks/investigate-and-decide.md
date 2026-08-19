@@ -8,4 +8,4 @@ Use current primary sources, project evidence, and small probes when they can an
 
 Do not return a diary of searches. Synthesize the evidence, exercise judgment, and recommend what to do. State the important tradeoffs and why plausible alternatives lost. If the requested deliverable is a design, brief, prototype, or decision, produce it.
 
-Answer factual forks yourself. Involve Charlie when the remaining choice is his priority, taste, business policy, or risk tolerance, and give him the evidence and your recommendation.
+Answer factual forks yourself. When the remaining choice depends on personal preference, product policy, or risk tolerance, present the evidence and a recommendation before asking for a decision.

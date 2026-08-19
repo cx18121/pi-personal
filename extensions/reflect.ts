@@ -36,7 +36,7 @@ export default function registerReflect(pi: ExtensionAPI) {
 
 			pending = true;
 			const focus = args.trim()
-				? `Reflect on this session.\n\nFocus from Charlie:\n${args}`
+				? `Reflect on this session.\n\nFocus:\n${args}`
 				: "Reflect on this session.";
 			pi.sendUserMessage(focus);
 		},

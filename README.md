@@ -9,7 +9,6 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx` and `
 - `modules/cxstack/` contains the complete CXStack feature.
 - `extensions/`, `lib/`, `scripts/`, and `test/` contain standalone personal extensions and their support files.
 - `vendor/` contains bundled local forks.
-- `docs/cxstack/` and `docs/skill-library/` contain historical design and audit records.
 
 ## Extensions
 

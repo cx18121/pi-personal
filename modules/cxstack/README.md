@@ -89,5 +89,3 @@ After activation, send another prompt without `/cx`. Then try `/cx off`. At the 
 - [`extensions/reflect.ts`](extensions/reflect.ts) owns the `/reflect` command.
 - [`resources/reflect.md`](resources/reflect.md) contains the private Reflect process.
 - [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/extensions.test.mjs`](test/extensions.test.mjs) cover the mechanical behavior.
-
-The detailed v0 design and review history remain in [`docs`](../../docs/). They are historical records, not a second source of runtime truth.

@@ -10,6 +10,8 @@ Infer the expected delivery stage from this evidence, in order:
 
 For nontrivial work, state the expected stage and the evidence that supports it. Never infer push, pull request creation, merge, deployment, production mutation, or publication from silence.
 
+Before writing a commit subject or pull request title, load the `commit-style` skill.
+
 For isolated implementation work with no established later stage, the fallback is a verified clean commit. A commit is not authorization for any later action.
 
 Keep these states distinct: changed, verified, committed, pushed, pull request opened, CI green, merged, deployed, production verified, and remediated. Report only the state the evidence proves.

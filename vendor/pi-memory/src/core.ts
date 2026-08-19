@@ -839,8 +839,9 @@ export function buildStartupContext(options: {
   return [
     "# Local memory",
     "Current code, documentation, explicit instructions, and the latest user correction override memory. Replace or remove stale memory rather than preserving conflicts.",
-    "When memory_search demonstrably misses or misranks a relevant memory, use a visible papercut add call with the exact query, expected result, and evidence. Do not report ordinary no-result searches or include secrets.",
+    "Use a visible papercut add call when a tool, prompt, skill, helper, or repository change could plausibly prevent observed workflow friction, even on a first occurrence. State the activity, friction, and plausible structural improvement. Skip incidental mistakes and never include secrets.",
     ...capture,
+    "During an explicit approval-gated review, propose durable memory and papercut writes and wait for the user's selection instead of writing them immediately.",
     ...body,
   ].join("\n\n");
 }

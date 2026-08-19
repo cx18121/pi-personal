@@ -3,6 +3,10 @@
   "version": "0.5.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "bun test ./test ./vendor/pi-memory/test && node ./test/cx-overflow-probe.mjs",
+    "typecheck": "tsc -p tsconfig.cxstack.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
+  },
   "keywords": [
     "pi-package"
   ],
@@ -15,6 +19,13 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
@@ -34,11 +45,13 @@
       "./extensions/clear-command.ts",
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
+      "./extensions/cx.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/inline-skills.ts",
       "./extensions/notify.ts",
       "./extensions/reminders.ts",
+      "./extensions/reflect.ts",
       "./extensions/side-conversations.ts",
       "./extensions/superset.ts",
       "./extensions/time.ts",

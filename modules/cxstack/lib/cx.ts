@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 export const CX_STATE_ENTRY = "cx-state";
+export const CX_REFERENCE_ENTRY = "cx-reference";
 export const CX_ACTIVE_MESSAGE = "cx-active";
 export const CX_INACTIVE_MESSAGE = "cx-inactive";
 export const CX_MARKER =
@@ -6,11 +9,15 @@ export const CX_MARKER =
 export const CX_INACTIVE_CONTENT =
 	"CX is inactive. Ignore every earlier CX kernel and marker instruction in this session unless a later CX activation message appears.";
 
+export const cxContentVersion = (content: string) =>
+	createHash("sha256").update(content).digest("hex").slice(0, 12);
+
 export type CxDirective = "active" | "inactive";
 
 export type CxRuntimeState = {
 	active: boolean;
 	hasState: boolean;
+	version?: string;
 	pending?: CxDirective;
 };
 
@@ -32,12 +39,15 @@ export type CxCommandDecision =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-const activeValue = (entry: CxEntry) => {
+const stateValue = (entry: CxEntry) => {
 	if (entry.type !== "custom" || entry.customType !== CX_STATE_ENTRY || !isRecord(entry.data)) {
 		return undefined;
 	}
-
-	return typeof entry.data.active === "boolean" ? entry.data.active : undefined;
+	if (typeof entry.data.active !== "boolean") return undefined;
+	return {
+		active: entry.data.active,
+		version: typeof entry.data.version === "string" ? entry.data.version : undefined,
+	};
 };
 
 export const emptyCxState = (): CxRuntimeState => ({
@@ -46,12 +56,13 @@ export const emptyCxState = (): CxRuntimeState => ({
 });
 
 export const restoreCxState = (entries: readonly CxEntry[]): CxRuntimeState => {
-	const value = entries.map(activeValue).findLast((active) => active !== undefined);
+	const value = entries.map(stateValue).findLast((item) => item !== undefined);
 	return value === undefined
 		? emptyCxState()
 		: {
-				active: value,
+				active: value.active,
 				hasState: true,
+				...(value.active && value.version !== undefined ? { version: value.version } : {}),
 			};
 };
 
@@ -85,24 +96,38 @@ export const expectedCxDirective = (state: CxRuntimeState): CxDirective | undefi
 	return state.hasState ? "inactive" : undefined;
 };
 
+const directiveValue = (entry: CxEntry): CxDirective | undefined => {
+	if (entry.type !== "custom_message") return undefined;
+	if (entry.customType === CX_ACTIVE_MESSAGE) return "active";
+	if (entry.customType === CX_INACTIVE_MESSAGE) return "inactive";
+	return undefined;
+};
+
 export const latestCxDirective = (entries: readonly CxEntry[]): CxDirective | undefined =>
-	entries
-		.map((entry) => {
-			if (entry.type !== "custom_message") return undefined;
-			if (entry.customType === CX_ACTIVE_MESSAGE) return "active";
-			if (entry.customType === CX_INACTIVE_MESSAGE) return "inactive";
-			return undefined;
-		})
-		.findLast((directive) => directive !== undefined);
+	entries.map(directiveValue).findLast((directive) => directive !== undefined);
+
+const latestDirectiveEntry = (entries: readonly CxEntry[]) =>
+	entries.findLast((entry) => directiveValue(entry) !== undefined);
+
+const directiveMatches = (entry: CxEntry | undefined, expected: CxDirective) =>
+	entry !== undefined && directiveValue(entry) === expected;
 
 export const refreshPendingDirective = (
 	state: CxRuntimeState,
 	contextEntries: readonly CxEntry[],
+	activeVersion?: string,
 ): CxRuntimeState => {
 	const expected = expectedCxDirective(state);
+	const versionChanged =
+		state.active && activeVersion !== undefined && state.version !== activeVersion;
 	return {
 		...state,
-		pending: expected !== undefined && latestCxDirective(contextEntries) !== expected ? expected : undefined,
+		...(state.active && activeVersion !== undefined ? { version: activeVersion } : {}),
+		pending:
+			expected !== undefined &&
+			(versionChanged || !directiveMatches(latestDirectiveEntry(contextEntries), expected))
+				? expected
+				: undefined,
 	};
 };
 

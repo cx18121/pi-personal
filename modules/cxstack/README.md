@@ -42,7 +42,19 @@ CX asks the agent to:
 
 Small tasks should stay direct. Harder tasks may use guidance for diagnosis, implementation, investigation, review, delivery, handoff, model choice, or an independent challenge.
 
-CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. It stores only one session boolean. It does not store a plan, task summary, theory, or completion claim.
+CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim.
+
+## Audit
+
+Run `/cx-audit` when you want to examine recent CX sessions for ways to improve the system:
+
+```text
+/cx-audit
+```
+
+The audit excludes the current session and reviews every prior session that used the current kernel version. Before versioned sessions exist, it reviews every detected CX session. It processes the cohort in batches of six, reads only the exact selected local session files, and looks for evidence about ownership, changed decisions, unnecessary work, verification, delivery, and missed or ineffective guidance.
+
+The result is a qualitative review, not a score or dashboard. It proposes exact improvements and waits for approval before changing CXStack or any other durable surface.
 
 ## Reflect
 
@@ -82,10 +94,13 @@ After activation, send another prompt without `/cx`. Then try `/cx off`. At the 
 
 ## Files
 
-- [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command and Pi session events.
+- [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command, Pi session events, and version markers.
+- [`extensions/audit.ts`](extensions/audit.ts) owns the `/cx-audit` command.
 - [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
+- [`lib/audit.ts`](lib/audit.ts) selects recent sessions and extracts only CX version and reference markers.
 - [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
 - [`resources/references`](resources/references/) contains guidance loaded only when useful.
+- [`resources/audit.md`](resources/audit.md) contains the private cross-session audit process.
 - [`extensions/reflect.ts`](extensions/reflect.ts) owns the `/reflect` command.
 - [`resources/reflect.md`](resources/reflect.md) contains the private Reflect process.
 - [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/extensions.test.mjs`](test/extensions.test.mjs) cover the mechanical behavior.

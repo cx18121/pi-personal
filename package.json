@@ -46,6 +46,7 @@
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
       "./modules/cxstack/extensions/cx.ts",
+      "./modules/cxstack/extensions/audit.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/inline-skills.ts",

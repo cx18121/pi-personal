@@ -11,8 +11,10 @@
     "types": ["node"]
   },
   "include": [
+    "extensions/audit.ts",
     "extensions/cx.ts",
     "extensions/reflect.ts",
+    "lib/audit.ts",
     "lib/cx.ts"
   ]
 }

@@ -2,7 +2,7 @@
 
 This package contains my personal Pi extensions and integrations.
 
-See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx` and `/reflect` work system.
+See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx-audit`, and `/reflect` work system.
 
 ## Layout
 
@@ -18,6 +18,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx` and `
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, Fast mode, context use, and diff size.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
 - [`modules/cxstack/extensions/cx.ts`](modules/cxstack/extensions/cx.ts) adds sticky `/cx` task ownership. It stores one session-wide boolean, injects a compact kernel only when needed, survives tree navigation and compaction, and uses `/cx off` for deterministic deactivation.
+- [`modules/cxstack/extensions/audit.ts`](modules/cxstack/extensions/audit.ts) adds `/cx-audit` for evidence-based review of recent CX sessions without ratings or dashboards.
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
 - [`extensions/fast-mode.ts`](extensions/fast-mode.ts) adds `/fast` for using OpenAI Priority processing on supported OpenAI API and ChatGPT OAuth models. The setting is saved in the current session.
 - [`extensions/inline-skills.ts`](extensions/inline-skills.ts) loads skills from short `/name` tokens anywhere in a prompt. It replaces Pi's native `/skill:name` skill completion with the same short form at the start of a prompt.
@@ -37,6 +38,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx` and `
 ## Support files
 
 - [`modules/cxstack/lib/cx.ts`](modules/cxstack/lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
+- [`modules/cxstack/lib/audit.ts`](modules/cxstack/lib/audit.ts) finds recent CX sessions and extracts only version and reference markers for the audit manifest.
 - [`lib/reminders.ts`](lib/reminders.ts) validates reminder data and groups reminders by date for the `/reminders` view.
 - [`lib/time-context.ts`](lib/time-context.ts) formats local time and calculates elapsed session time for the time tool.
 - [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.

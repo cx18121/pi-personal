@@ -3,10 +3,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	extractCxSessionEvidence,
+	selectCxAuditSessions,
+} from "../lib/audit.ts";
+import {
 	applyCxCommand,
 	CX_ACTIVE_MESSAGE,
 	CX_INACTIVE_MESSAGE,
 	CX_MARKER,
+	CX_REFERENCE_ENTRY,
 	CX_STATE_ENTRY,
 	decideCxCommand,
 	emptyCxState,
@@ -20,10 +25,10 @@ import {
 
 const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageRoot = resolve(moduleRoot, "../..");
-const stateEntry = (active: boolean) => ({
+const stateEntry = (active: boolean, version?: string) => ({
 	type: "custom",
 	customType: CX_STATE_ENTRY,
-	data: { active },
+	data: { active, ...(version === undefined ? {} : { version }) },
 });
 const directiveEntry = (directive: "active" | "inactive") => ({
 	type: "custom_message",
@@ -75,9 +80,10 @@ describe("CX session state", () => {
 			active: false,
 			hasState: true,
 		});
-		expect(restoreCxState([stateEntry(false), stateEntry(true)])).toEqual({
+		expect(restoreCxState([stateEntry(false), stateEntry(true, "kernel-v1")])).toEqual({
 			active: true,
 			hasState: true,
+			version: "kernel-v1",
 		});
 	});
 
@@ -99,6 +105,23 @@ describe("CX session state", () => {
 		expect(
 			refreshPendingDirective({ active: false, hasState: true }, [directiveEntry("active")]),
 		).toEqual({ active: false, hasState: true, pending: "inactive" });
+	});
+
+	test("refreshes active guidance when its content version changes", () => {
+		expect(
+			refreshPendingDirective(
+				{ active: true, hasState: true, version: "old" },
+				[directiveEntry("active")],
+				"current",
+			),
+		).toEqual({ active: true, hasState: true, version: "current", pending: "active" });
+		expect(
+			refreshPendingDirective(
+				{ active: true, hasState: true, version: "current" },
+				[directiveEntry("active")],
+				"current",
+			),
+		).toEqual({ active: true, hasState: true, version: "current", pending: undefined });
 	});
 
 	test("injects a pending directive before using the marker", () => {
@@ -132,6 +155,132 @@ describe("CX compaction", () => {
 	});
 });
 
+describe("CX audit evidence", () => {
+	test("extracts only CX versions and reference markers", () => {
+		const evidence = extractCxSessionEvidence(
+			[
+				JSON.stringify({ type: "session", id: "one" }),
+				JSON.stringify({
+					type: "custom",
+					customType: CX_STATE_ENTRY,
+					data: { active: true, version: "kernel-v2", private: "ignored" },
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: CX_REFERENCE_ENTRY,
+					data: {
+						reference: "playbooks/diagnose-and-fix",
+						version: "reference-v3",
+						path: "/private/path",
+					},
+				}),
+				JSON.stringify({
+					type: "message",
+					message: { role: "user", content: "private customer data" },
+				}),
+			].join("\n"),
+		);
+		expect(evidence).toEqual({
+			used: true,
+			kernelVersions: ["kernel-v2"],
+			references: [
+				{ reference: "playbooks/diagnose-and-fix", version: "reference-v3" },
+			],
+		});
+		expect(JSON.stringify(evidence)).not.toContain("private");
+	});
+
+	test("selects CX sessions and excludes the current one", () => {
+		const sessions = selectCxAuditSessions(
+			[
+				{
+					path: "/sessions/current.jsonl",
+					id: "current",
+					modified: new Date("2026-08-20T12:00:00Z"),
+				},
+				{
+					path: "/sessions/plain.jsonl",
+					id: "plain",
+					modified: new Date("2026-08-20T11:00:00Z"),
+				},
+				{
+					path: "/sessions/cx.jsonl",
+					id: "cx",
+					modified: new Date("2026-08-20T10:00:00Z"),
+				},
+			],
+			"/sessions/current.jsonl",
+			(path) =>
+				path.endsWith("cx.jsonl")
+					? JSON.stringify(stateEntry(true))
+					: JSON.stringify({ type: "session" }),
+			"current-kernel",
+		);
+		expect(sessions).toEqual([
+			{
+				path: "/sessions/cx.jsonl",
+				id: "cx",
+				modified: "2026-08-20T10:00:00.000Z",
+				kernelVersions: [],
+				references: [],
+			},
+		]);
+	});
+
+	test("skips an unreadable session and continues selecting", () => {
+		const readErrors: string[] = [];
+		const sessions = selectCxAuditSessions(
+			[
+				{
+					path: "/sessions/broken.jsonl",
+					id: "broken",
+					modified: new Date("2026-08-20T11:00:00Z"),
+				},
+				{
+					path: "/sessions/cx.jsonl",
+					id: "cx",
+					modified: new Date("2026-08-20T10:00:00Z"),
+				},
+			],
+			undefined,
+			(path) => {
+				if (path.endsWith("broken.jsonl")) throw new Error("unreadable");
+				return JSON.stringify(stateEntry(true));
+			},
+			"current-kernel",
+			(session) => readErrors.push(session.id),
+		);
+		expect(readErrors).toEqual(["broken"]);
+		expect(sessions.map((session) => session.id)).toEqual(["cx"]);
+	});
+
+	test("returns the complete current-kernel cohort", () => {
+		const current = Array.from({ length: 7 }, (_, index) => ({
+			path: `/sessions/current-${index}.jsonl`,
+			id: `current-${index}`,
+			modified: new Date(`2026-08-20T10:00:0${index}Z`),
+		}));
+		const sessions = selectCxAuditSessions(
+			[
+				...current,
+				{
+					path: "/sessions/old.jsonl",
+					id: "old",
+					modified: new Date("2026-08-19T10:00:00Z"),
+				},
+			],
+			undefined,
+			(path) =>
+				JSON.stringify(
+					stateEntry(true, path.endsWith("old.jsonl") ? "old-kernel" : "current-kernel"),
+				),
+			"current-kernel",
+		);
+		expect(sessions).toHaveLength(7);
+		expect(sessions.every((session) => session.id.startsWith("current-"))).toBe(true);
+	});
+});
+
 describe("CX package resources", () => {
 	test("keeps the reviewed kernel and marker compact", () => {
 		const kernel = readFileSync(join(moduleRoot, "resources/kernel.md"), "utf8").trim();
@@ -162,6 +311,7 @@ describe("CX package resources", () => {
 		const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 		expect(manifest.pi.skills).toBeUndefined();
 		expect(manifest.pi.prompts).toBeUndefined();
+		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/audit.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/cx.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/reflect.ts");
 		expect(existsSync(join(packageRoot, "skills/cx/SKILL.md"))).toBe(false);

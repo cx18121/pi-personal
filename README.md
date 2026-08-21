@@ -15,7 +15,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/answer.ts`](extensions/answer.ts) adds `/answer` and `Ctrl+.`. It finds questions in the last assistant response, shows them in a form, and sends the completed answers back to Pi.
 - [`extensions/apple-notes.ts`](extensions/apple-notes.ts) adds `/note` and tools for searching, listing, reading, saving, and creating Apple Notes.
 - [`extensions/clear-command.ts`](extensions/clear-command.ts) adds `/clear` for starting a session with no conversation context. It also hides `/new` from command completion.
-- [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, Fast mode, context use, and diff size.
+- [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, active modes, context use, and diff size.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
 - [`modules/cxstack/extensions/cx.ts`](modules/cxstack/extensions/cx.ts) adds sticky `/cx` task ownership. It stores one session-wide boolean, injects a compact kernel only when needed, survives tree navigation and compaction, and uses `/cx off` for deterministic deactivation.
 - [`modules/cxstack/extensions/audit.ts`](modules/cxstack/extensions/audit.ts) adds `/cx-audit` for evidence-based review of recent CX sessions without ratings or dashboards.

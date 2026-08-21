@@ -6,27 +6,21 @@ It is based on the useful parts of [PStack](https://github.com/cursor/plugins/tr
 
 ## Use it
 
-Start a task with `/cx`:
+New blank sessions start with CX active, so you can send tasks normally. The footer shows `CX` while it is active.
+
+You can still use `/cx` to start a task explicitly:
 
 ```text
 /cx Fix the checkout regression. Reproduce it first and do not push.
 ```
 
-Pi shows `CX active.` and starts the task. CX stays active for later prompts in the same session, so you do not need to repeat the command.
-
-You can also turn it on without starting a task:
-
-```text
-/cx
-```
-
-Turn it off with:
+CX stays active for later prompts in the same session. Turn it off for that session with:
 
 ```text
 /cx off
 ```
 
-A new blank session starts with CX off.
+Run `/cx` with no arguments to turn it back on. Explicit on or off state survives reloads, forks, and tree changes. Historical sessions created before default activation keep their prior state.
 
 ## What to expect
 
@@ -90,7 +84,7 @@ Watch whether the agent:
 - Verifies the promised surface.
 - States the real delivery status without claiming more than it proved.
 
-After activation, send another prompt without `/cx`. Then try `/cx off`. At the end of the session, run `/reflect` and approve only lessons that will remain useful.
+Send another prompt without `/cx`, then try `/cx off` and `/cx` to restore it. At the end of the session, run `/reflect` and approve only lessons that will remain useful.
 
 ## Files
 

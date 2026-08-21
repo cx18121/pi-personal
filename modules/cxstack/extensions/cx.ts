@@ -18,6 +18,7 @@ import {
 	renderCxKernel,
 	restoreCxState,
 	restoreCxStateFile,
+	shouldActivateCxByDefault,
 	takeBeforeAgentDirective,
 	type CxDirective,
 } from "../lib/cx.js";
@@ -59,8 +60,22 @@ const directiveMessage = (directive: CxDirective) => ({
 	details: { directive },
 });
 
+const syncStatus = (ctx: ExtensionContext, active: boolean) => {
+	ctx.ui.setStatus("cx-mode", active ? ctx.ui.theme.fg("accent", "CX") : undefined);
+};
+
 export default function registerCx(pi: ExtensionAPI) {
 	let state = emptyCxState();
+
+	const activateByDefault = () => {
+		state = {
+			active: true,
+			hasState: true,
+			version: kernelVersion,
+			pending: "active",
+		};
+		pi.appendEntry(CX_STATE_ENTRY, stateEntryData(true));
+	};
 
 	const restoreCurrentSession = (ctx: ExtensionContext) => {
 		const restored = restoreCxState(ctx.sessionManager.getEntries());
@@ -75,8 +90,10 @@ export default function registerCx(pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", (event, ctx) => {
-		if (event.reason === "new") {
-			state = emptyCxState();
+		const entries = ctx.sessionManager.getEntries();
+		if (shouldActivateCxByDefault(event.reason, restoreCxState(entries), entries)) {
+			activateByDefault();
+			syncStatus(ctx, state.active);
 			return;
 		}
 
@@ -96,14 +113,17 @@ export default function registerCx(pi: ExtensionAPI) {
 				ctx.sessionManager.buildContextEntries(),
 				kernelVersion,
 			);
+			syncStatus(ctx, state.active);
 			return;
 		}
 
 		restoreCurrentSession(ctx);
+		syncStatus(ctx, state.active);
 	});
 
 	pi.on("session_tree", (_event, ctx) => {
 		restoreCurrentSession(ctx);
+		syncStatus(ctx, state.active);
 	});
 
 	pi.on("before_agent_start", (event) => {
@@ -165,6 +185,7 @@ export default function registerCx(pi: ExtensionAPI) {
 			if (decision.kind === "activate" || decision.kind === "activate-task") {
 				state = { ...state, version: kernelVersion };
 			}
+			syncStatus(ctx, state.active);
 
 			if (decision.kind === "noop-active") {
 				ctx.ui.notify("CX is already active.", "info");

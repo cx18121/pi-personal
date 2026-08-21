@@ -22,6 +22,7 @@ const createHarness = () => {
 	const messages = [];
 	const userMessages = [];
 	const notifications = [];
+	const statuses = [];
 	const pi = {
 		on(event, handler) {
 			handlers.set(event, handler);
@@ -53,8 +54,16 @@ const createHarness = () => {
 			getSessionFile: () => sessionFile,
 		},
 		ui: {
+			theme: {
+				fg(_color, text) {
+					return text;
+				},
+			},
 			notify(message, level) {
 				notifications.push({ message, level });
+			},
+			setStatus(key, value) {
+				statuses.push({ key, value });
 			},
 		},
 	});
@@ -66,6 +75,7 @@ const createHarness = () => {
 		messages,
 		userMessages,
 		notifications,
+		statuses,
 		context,
 	};
 };
@@ -94,7 +104,62 @@ describe("CX extension wiring", () => {
 		]);
 	});
 
-	test("forwards an activation task once, then uses only the marker", async () => {
+	test("activates blank sessions before their first turn", () => {
+		for (const reason of ["startup", "reload", "resume", "new"]) {
+			const harness = createHarness();
+			registerCx(harness.pi);
+			const ctx = harness.context();
+			harness.handlers.get("session_start")({ reason }, ctx);
+
+			expect(harness.entries).toEqual([
+				{
+					customType: CX_STATE_ENTRY,
+					data: { active: true, version: expect.any(String) },
+				},
+			]);
+			expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: "CX" });
+			expect(
+				harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx).message
+					.customType,
+			).toBe(CX_ACTIVE_MESSAGE);
+		}
+	});
+
+	test("preserves historical sessions without CX state", () => {
+		for (const reason of ["startup", "reload", "resume"]) {
+			const harness = createHarness();
+			registerCx(harness.pi);
+			const history = [{ type: "message" }];
+			const ctx = harness.context({ sessionEntries: history, contextEntries: history });
+			harness.handlers.get("session_start")({ reason }, ctx);
+
+			expect(harness.entries).toEqual([]);
+			expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: undefined });
+			expect(
+				harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx),
+			).toBeUndefined();
+		}
+	});
+
+	test("preserves explicit off state on reload", () => {
+		const harness = createHarness();
+		registerCx(harness.pi);
+		const inactive = stateEntry(false);
+		const inactiveContext = directiveEntry(CX_INACTIVE_MESSAGE);
+		const ctx = harness.context({
+			sessionEntries: [inactive],
+			contextEntries: [inactiveContext],
+		});
+		harness.handlers.get("session_start")({ reason: "reload" }, ctx);
+
+		expect(harness.entries).toEqual([]);
+		expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: undefined });
+		expect(
+			harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx),
+		).toBeUndefined();
+	});
+
+	test("forwards tasks in a default-active session, then uses only the marker", async () => {
 		const harness = createHarness();
 		registerCx(harness.pi);
 		const ctx = harness.context();
@@ -109,6 +174,7 @@ describe("CX extension wiring", () => {
 			},
 		]);
 		expect(harness.userMessages).toEqual([{ content: task, options: undefined }]);
+		expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: "CX" });
 
 		const activation = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(activation.message.customType).toBe(CX_ACTIVE_MESSAGE);
@@ -144,6 +210,7 @@ describe("CX extension wiring", () => {
 			options: { triggerTurn: false },
 		});
 		expect(harness.userMessages).toEqual([]);
+		expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: undefined });
 	});
 
 	test("records successful reference reads without transcript content", async () => {

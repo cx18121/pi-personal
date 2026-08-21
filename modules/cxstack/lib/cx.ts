@@ -13,6 +13,7 @@ export const cxContentVersion = (content: string) =>
 	createHash("sha256").update(content).digest("hex").slice(0, 12);
 
 export type CxDirective = "active" | "inactive";
+export type CxSessionStartReason = "startup" | "reload" | "new" | "resume" | "fork";
 
 export type CxRuntimeState = {
 	active: boolean;
@@ -54,6 +55,16 @@ export const emptyCxState = (): CxRuntimeState => ({
 	active: false,
 	hasState: false,
 });
+
+export const shouldActivateCxByDefault = (
+	reason: CxSessionStartReason,
+	state: CxRuntimeState,
+	entries: readonly CxEntry[],
+) =>
+	reason === "new" ||
+	(reason !== "fork" &&
+		!state.hasState &&
+		!entries.some((entry) => entry.type === "message"));
 
 export const restoreCxState = (entries: readonly CxEntry[]): CxRuntimeState => {
 	const value = entries.map(stateValue).findLast((item) => item !== undefined);

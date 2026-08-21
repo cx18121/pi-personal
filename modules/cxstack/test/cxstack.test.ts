@@ -20,6 +20,7 @@ import {
 	renderCxKernel,
 	restoreCxState,
 	restoreCxStateFile,
+	shouldActivateCxByDefault,
 	takeBeforeAgentDirective,
 } from "../lib/cx.ts";
 
@@ -71,6 +72,30 @@ describe("CX commands", () => {
 		expect(decideCxCommand(emptyCxState(), "off", true)).toEqual({
 			kind: "noop-inactive",
 		});
+	});
+});
+
+describe("CX session defaults", () => {
+	test("activates new and genuinely blank sessions", () => {
+		expect(shouldActivateCxByDefault("new", emptyCxState(), [{ type: "message" }])).toBe(
+			true,
+		);
+		expect(shouldActivateCxByDefault("startup", emptyCxState(), [])).toBe(true);
+		expect(shouldActivateCxByDefault("reload", emptyCxState(), [])).toBe(true);
+		expect(shouldActivateCxByDefault("resume", emptyCxState(), [])).toBe(true);
+	});
+
+	test("preserves explicit state and historical sessions without state", () => {
+		expect(
+			shouldActivateCxByDefault("startup", { active: false, hasState: true }, []),
+		).toBe(false);
+		expect(
+			shouldActivateCxByDefault("startup", emptyCxState(), [{ type: "message" }]),
+		).toBe(false);
+		expect(
+			shouldActivateCxByDefault("resume", emptyCxState(), [{ type: "message" }]),
+		).toBe(false);
+		expect(shouldActivateCxByDefault("fork", emptyCxState(), [])).toBe(false);
 	});
 });
 

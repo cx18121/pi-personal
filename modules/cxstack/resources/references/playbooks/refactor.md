@@ -1,0 +1,17 @@
+# Refactor
+
+Use for behavior-preserving changes to structure, ownership, naming, or representation. Read and copy the Change Spine first, then add these route-specific steps.
+
+Under **Establish route evidence**:
+
+1. **Pin current behavior.** Capture the observable outputs, public interfaces, callers, error behavior, and relevant performance before moving structure.
+2. **Name the complexity to remove.** State which duplicated fact, scattered change, leaky interface, or reader burden disappears.
+3. **Choose the target seam.** Trace callers and ownership. Use the Architecture Challenge when a public interface, system boundary, shared path, or durable model changes.
+4. **Define deletion.** Name the old path, adapter, helper, or representation that the refactor removes. A second path is not a completed refactor.
+
+Under **Work in verifiable units**:
+
+5. **Move callers and delete the old path.** Avoid compatibility layers without real external consumers.
+6. **Re-run the pinned observations.** Prove behavior stayed equivalent and inspect the final diff for moved rather than removed complexity.
+
+Do not smuggle feature behavior into a refactor. If behavior must change, reroute visibly to Feature.

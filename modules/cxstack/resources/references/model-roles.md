@@ -8,8 +8,10 @@ Use child models only for bounded contributions that earn their cost. These are 
 - Prefer Claude Fable for intent, product and design judgment, synthesis, and long context.
 - Prefer the complementary family for an independent challenge.
 
-Let the full task override these defaults when the other model is a better fit. Do not build a classifier or route by keywords.
+Let the task override these defaults when another model is a better fit. Do not build a classifier or route by keywords.
 
-Before delegating, follow the installed `pi-subagents` contract. List available agents, use a fresh context for independent review, give the child the raw artifact and evidence it needs, and keep the parent responsible for synthesis and decisions. Use one child when one distinct contribution is enough. Several children are justified only when their lanes answer different questions.
+Before `child_run`, choose an exact `provider/model` from the current Pi registry. Use `pi --list-models <provider>` when the exact identifier is not already known. A listed model can still fail authentication or quota checks; that failure blocks the child result and is not a clean review. Report it or choose another configured exact model instead of guessing an identifier.
 
-Children do not gain publication, merge, deployment, destructive, or product authority. Keep reviewers read only. Never spawn a panel merely to satisfy a count.
+Give each child a self-contained task, current primary evidence, exact source paths, authority boundary, success condition, and output contract. Independent reviews use fresh context by construction. One child is enough unless separate questions genuinely need separate contexts.
+
+The main agent owns synthesis, decisions, and every project mutation. Child prompts define their authority. Review, investigation, and judgment tasks are read only unless explicitly authorized otherwise. Children gain no publication, merge, deployment, destructive, or product authority.

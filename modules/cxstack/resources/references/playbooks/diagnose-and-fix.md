@@ -1,13 +1,17 @@
 # Diagnose and Fix
 
-Use this for defects, regressions, incidents, and measured performance failures.
+Use for defects, regressions, and incidents when repair is requested. Read and copy the Change Spine first, then add these route-specific steps.
 
-Treat the supplied theory as a lead, not the cause. Establish the exact failure, affected object or surface, expected behavior, and the observation that would distinguish fixed from merely masked.
+Under **Establish route evidence**:
 
-Keep confirmed facts, falsified hypotheses, and open questions separate. Trace the exact object across actors, states, queues, runtimes, and data transformations. Change direction when evidence contradicts the working theory.
+1. **Reproduce the exact failure.** Identify the affected object or surface, expected behavior, observed behavior, and the observation that distinguishes fixed from masked.
+2. **Preserve raw evidence.** Capture the source event, value, trace, or runtime boundary before transforming it.
+3. **Trace the cause.** Keep confirmed facts, falsified hypotheses, and open questions separate. Trace the object across actors, states, queues, runtimes, and data transformations. For regressions, inspect the introducing diff or bisect before designing the fix.
+4. **Name the owning seam and root cause.** Treat the supplied theory as a lead. Do not turn an urgent repair into an architecture project, but correct the model when the root cause requires it.
 
-When a repair removes a gate or makes a capability independent, inspect what the old gate was masking. Include the empty state and relevant default or fallback behavior in the proof.
+Under **Work in verifiable units**:
 
-Find the owning seam and root cause, but do not turn an urgent repair into an architecture project. The smallest complete repair may be one line or may require correcting the model. Preserve raw evidence before transforming it. Do not validate a derived value by repeating the production formula in a query or fixture. Build the expected value from the source event and its business meaning, then compare it with the implementation result.
+5. **Repair the root cause.** Build expected values from source events and business meaning rather than repeating the production formula in a query or fixture.
+6. **Prove the original symptom is gone.** Exercise the same surface and include the relevant empty, default, fallback, retry, or masked behavior. State the closest verified boundary when the real surface is unavailable.
 
-Use project, domain, debugging, runtime, browser, and test capabilities when they improve the proof. An explanation is not a fix. Finish when the original symptom is observed gone, or state the closest boundary verified and what remains unobserved.
+An explanation is not a fix. A workaround passing does not prove root cause.

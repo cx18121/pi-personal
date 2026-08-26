@@ -1,21 +1,13 @@
 # Delivery
 
-Infer the expected delivery stage from this evidence, in order:
+Use for commit, push, pull request, merge, publication, deployment, and production verification.
 
-1. The current explicit instruction and conversation.
-2. The project `AGENTS.md` delivery contract.
-3. Existing branch, worktree, pull request, issue, or release state.
-4. Repository workflow and release documentation.
-5. Stable personal context.
+1. **Resolve the expected stage.** Use the current explicit instruction, project contract, branch or pull-request state, repository workflow, and stable personal context in that order. Never infer push, merge, deploy, production mutation, or publication from silence.
+2. **Reconcile the artifact.** Confirm the Review route is complete for nontrivial work. Explicitly accept or report every material defect and residual risk before calling work ready. If a fix is required, leave Delivery, enter the appropriate change route, then complete Review again before returning.
+3. **Inspect repository state.** Separate changed, verified, committed, pushed, pull request opened, CI green, merged, deployed, production verified, and remediated. Keep one delivery record per repository.
+4. **Prepare the delivery unit.** Preserve unrelated work, stage only intended files, load `commit-style` before commit or pull-request titles, and use `pr-description` for pull-request prose.
+5. **Perform only authorized actions.** A local commit grants no later authority. Existing external receipts and green checks are evidence, not permission.
+6. **Verify the resulting state.** Read the actual commit, remote branch, pull request, merge, deployment, or production surface claimed. Do not report a later state than observed.
+7. **Hand back plainly.** Name what changed, what was proved, the exact delivery state, unresolved limits, and the next authorized owner.
 
-For nontrivial work, state the expected stage and the evidence that supports it. Never infer push, pull request creation, merge, deployment, production mutation, or publication from silence.
-
-Before writing a commit subject or pull request title, load the `commit-style` skill.
-
-For isolated implementation work with no established later stage, the fallback is a verified clean commit. A commit is not authorization for any later action.
-
-Keep these states distinct: changed, verified, committed, pushed, pull request opened, CI green, merged, deployed, production verified, and remediated. Report only the state the evidence proves.
-
-Before declaring work ready, reconcile every material defect or residual risk identified during the session. Fix it, record the explicit decision that accepts it, or report it as unresolved.
-
-Across repositories, keep one delivery record per repository. A completed local lane does not imply that another lane was committed or published.
+For isolated implementation with no established later stage, the fallback is a verified clean local commit. Across repositories, completion in one lane says nothing about another.

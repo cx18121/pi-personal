@@ -34,9 +34,9 @@ CX asks the agent to:
 - Investigate factual questions instead of asking you to decide them.
 - Verify the promised surface and stop confidence at the evidence.
 
-Small tasks should stay direct. Harder tasks may use guidance for diagnosis, implementation, investigation, review, delivery, handoff, model choice, or an independent challenge.
+Small tasks stay direct. Every nontrivial task names one of eight routes, reads its playbook, and copies the required steps into Todo. Investigation, implementation, review, and delivery stay separate, and a skipped required step remains visible with a reason.
 
-CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim.
+CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries the active route steps.
 
 ## Audit
 
@@ -78,9 +78,12 @@ Use your next small task with a clear expected result. State the delivery limit 
 
 Watch whether the agent:
 
+- Names the right route and copies its steps into Todo.
+- Keeps investigation read only until implementation is explicit.
 - Asks only when your judgment is needed.
 - Changes direction when evidence contradicts its first approach.
-- Keeps the change within the requested scope.
+- Returns to Investigation and Decision when a material fork appears.
+- Runs the required maintainability and correctness reviews.
 - Verifies the promised surface.
 - States the real delivery status without claiming more than it proved.
 
@@ -93,7 +96,7 @@ Send another prompt without `/cx`, then try `/cx off` and `/cx` to restore it. A
 - [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
 - [`lib/audit.ts`](lib/audit.ts) selects recent sessions and extracts only CX version and reference markers.
 - [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
-- [`resources/references`](resources/references/) contains guidance loaded only when useful.
+- [`resources/references`](resources/references/) contains the eight route playbooks, shared change spine, child review contracts, and conditional guidance.
 - [`resources/audit.md`](resources/audit.md) contains the private cross-session audit process.
 - [`extensions/reflect.ts`](extensions/reflect.ts) owns the `/reflect` command.
 - [`resources/reflect.md`](resources/reflect.md) contains the private Reflect process.

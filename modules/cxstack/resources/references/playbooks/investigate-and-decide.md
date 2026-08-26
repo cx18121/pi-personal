@@ -1,11 +1,13 @@
-# Investigate and Decide
+# Investigation and Decision
 
-Use this for research, comparisons, architecture questions, and decisions.
+Use for ticket intake, explanations, research, comparisons, architecture questions, recommendations, and “are we sure?” requests. This route is read only.
 
-Define the decision to make or artifact to deliver, who will use it, and what would change because of it. Treat the prompt's theory as a lead, not the conclusion. Model only distinctions that could change the decision.
+1. **Read the source.** Read the exact ticket, message, comments, attachments, screenshots, linked records, and primary evidence. Do not substitute a summary for its source.
+2. **Frame the investigation.** State the reported symptom, affected user or system, expected behavior, facts needed, intended deliverable, and the read-only boundary.
+3. **Inspect the evidence.** Use relevant data, logs, runtime behavior, current code, project documentation, history, issues, and discussions. Report unavailable evidence and keep dependent claims provisional.
+4. **Map the current system.** Trace every existing path serving the same need. Name data sources, readers, writers, ownership, security, interfaces, downstream consumers, and duplicated policy.
+5. **Explain from zero context.** Separate observed facts, supported conclusions, hypotheses, unknowns, and user impact. Correct the supplied theory when evidence disagrees.
+6. **Compare credible directions.** Explain what each solves, does not solve, changes permanently, costs to maintain, requires for rollout, and needs for proof. State a recommendation and why alternatives lost. Run the Readiness Review and Architecture Challenge when their triggers apply.
+7. **Grill and hand back.** Investigate factual prerequisites yourself. Ask only remaining judgment questions. Present the settled outcome, decisions and reasons, included scope, deliberate exclusions, proof plan, and open limits. Stop without changing code.
 
-Use current primary sources, project evidence, and small probes when they can answer the question. When a report links the record, log, screenshot, or run that demonstrates the claim, inspect it before explaining the issue. If access fails, state that limit and keep the explanation provisional. Separate observed fact, supported inference, hypothesis, preference, product decision, and unknown. Preserve exact source and experiment boundaries. More links do not repair a weak claim.
-
-Do not return a diary of searches. Synthesize the evidence, exercise judgment, and recommend what to do. State the important tradeoffs and why plausible alternatives lost. If the requested deliverable is a design, brief, prototype, or decision, produce it.
-
-Answer factual forks yourself. When the remaining choice depends on personal preference, product policy, or risk tolerance, present the evidence and a recommendation before asking for a decision.
+A later implementation instruction starts a new Feature, Diagnose and Fix, Performance, Refactor, or Prototype route. Do not continue this route into mutation.

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test && node ./modules/cxstack/test/overflow-probe.mjs",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
+    "test": "bun test ./test ./modules/child-agent/test ./modules/cxstack/test ./vendor/pi-memory/test && node ./modules/cxstack/test/overflow-probe.mjs",
+    "typecheck": "tsc -p modules/child-agent/tsconfig.json --noEmit && tsc -p modules/cxstack/tsconfig.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -46,6 +46,7 @@
       "./extensions/clear-command.ts",
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
+      "./modules/child-agent/extensions/child-agent.ts",
       "./modules/cxstack/extensions/cx.ts",
       "./modules/cxstack/extensions/audit.ts",
       "./extensions/effort.ts",

@@ -16,4 +16,6 @@ For isolated implementation work with no established later stage, the fallback i
 
 Keep these states distinct: changed, verified, committed, pushed, pull request opened, CI green, merged, deployed, production verified, and remediated. Report only the state the evidence proves.
 
+Before declaring work ready, reconcile every material defect or residual risk identified during the session. Fix it, record the explicit decision that accepts it, or report it as unresolved.
+
 Across repositories, keep one delivery record per repository. A completed local lane does not imply that another lane was committed or published.

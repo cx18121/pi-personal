@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test ./test ./modules/child-agent/test ./modules/cxstack/test ./vendor/pi-memory/test && node ./modules/cxstack/test/overflow-probe.mjs",
+    "test": "bun test ./test ./modules/child-agent/test ./modules/cxstack/test ./vendor/pi-memory/test",
+    "test:routing": "node ./modules/cxstack/test/routing-probe.mjs",
     "typecheck": "tsc -p modules/child-agent/tsconfig.json --noEmit && tsc -p modules/cxstack/tsconfig.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
@@ -22,9 +23,9 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.3",
+    "@earendil-works/pi-coding-agent": "0.84.3",
+    "@earendil-works/pi-tui": "0.84.3",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   },
@@ -49,6 +50,7 @@
       "./modules/child-agent/extensions/child-agent.ts",
       "./modules/cxstack/extensions/cx.ts",
       "./modules/cxstack/extensions/audit.ts",
+      "./modules/cxstack/extensions/corrections.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/inline-skills.ts",

@@ -1,6 +1,6 @@
 # Investigation and Decision
 
-Use for ticket intake, explanations, research, comparisons, architecture questions, recommendations, and “are we sure?” requests. This route is read only.
+Use for material decisions under uncertainty across sources or systems. Ordinary explanations, recommendations, and confidence questions stay direct unless the consequence gate is met. This route is read only.
 
 1. **Read the source.** Read the exact ticket, message, comments, attachments, screenshots, linked records, and primary evidence. Do not substitute a summary for its source.
 2. **Frame the investigation.** State the reported symptom, affected user or system, expected behavior, facts needed, intended deliverable, and the read-only boundary.

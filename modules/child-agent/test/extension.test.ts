@@ -21,7 +21,14 @@ async function settle(): Promise<void> {
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function harness(idle = true) {
+function harness(
+	idle = true,
+	scopedModels = [
+		{ model: { provider: "anthropic", id: "claude-fable-test" } },
+		{ model: { provider: "anthropic", id: "claude-opus-test" } },
+		{ model: { provider: "openai-codex", id: "test-model" } },
+	],
+) {
 	const handlers = new Map<string, (...args: any[]) => any>();
 	const tools = new Map<string, ToolDefinition>();
 	const messages: Array<{ message: any; options: any }> = [];
@@ -42,6 +49,7 @@ function harness(idle = true) {
 		hasUI: true,
 		isIdle: () => idle,
 		modelRegistry: {} as never,
+		scopedModels,
 		sessionManager: {
 			getSessionId: () => "owner-session",
 		},
@@ -77,25 +85,99 @@ describe("child agent extension", () => {
 
 		const started = await execute(
 			h.tools.get("child_run")!,
-			{ task: "Review the diff", model: "anthropic/test-model" },
+			{ task: "Review the diff", model: "fable" },
 			h.context,
 		);
 		const id = (started.details as { id: string }).id;
 		expect(started.content[0]).toMatchObject({ type: "text", text: expect.stringContaining(id) });
 		expect(input).toMatchObject({
 			task: "Review the diff",
-			model: "anthropic/test-model",
+			model: "anthropic/claude-fable-test",
 			cwd: "/workspace",
 		});
-		expect(h.statuses.at(-1)).toEqual({ key: "child-agent", value: "child 1" });
+		expect(h.statuses.at(-1)).toEqual({ key: "child-agent", value: "child 1 · 0s" });
 
 		run.resolve({ output: "No issues found.", model: "anthropic/reported" });
 		await settle();
 
 		expect(h.messages).toHaveLength(1);
 		expect(h.messages[0]?.message.content).toContain("No issues found.");
+		expect(h.messages[0]?.message.content).toContain("Reconcile Todo before replying.");
 		expect(h.messages[0]?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
 		expect(h.statuses.at(-1)).toEqual({ key: "child-agent", value: undefined });
+	});
+
+	test("refreshes elapsed footer status while a child runs", async () => {
+		const run = deferred<ChildResult>();
+		const h = harness();
+		registerChildAgent(h.pi, { runChild: () => run.promise });
+		h.handlers.get("session_start")?.({}, h.context);
+
+		await execute(
+			h.tools.get("child_run")!,
+			{ task: "Long review", model: "fable" },
+			h.context,
+		);
+		await new Promise<void>((resolve) => setTimeout(resolve, 1_050));
+
+		expect(h.statuses.some(({ value }) => value === "child 1 · 1s")).toBeTrue();
+		run.resolve({ output: "done" });
+		await settle();
+	});
+
+	test("resolves the OpenAI choice from the three scoped models", async () => {
+		let input: ChildInput | undefined;
+		const h = harness();
+		registerChildAgent(h.pi, {
+			runChild: async (value) => {
+				input = value;
+				return { output: "done" };
+			},
+		});
+		h.handlers.get("session_start")?.({}, h.context);
+
+		await execute(
+			h.tools.get("child_run")!,
+			{ task: "Review the diff", model: "openai" },
+			h.context,
+		);
+
+		expect(input?.model).toBe("openai-codex/test-model");
+	});
+
+	test("resolves the Opus choice from the three scoped models", async () => {
+		let input: ChildInput | undefined;
+		const h = harness();
+		registerChildAgent(h.pi, {
+			runChild: async (value) => {
+				input = value;
+				return { output: "done" };
+			},
+		});
+		h.handlers.get("session_start")?.({}, h.context);
+
+		await execute(
+			h.tools.get("child_run")!,
+			{ task: "Review the diff", model: "opus" },
+			h.context,
+		);
+
+		expect(input?.model).toBe("anthropic/claude-opus-test");
+	});
+
+	test("validates only the requested scoped model choice", async () => {
+		const h = harness(true, [
+			{ model: { provider: "anthropic", id: "claude-fable-test" } },
+			{ model: { provider: "openai-codex", id: "test-model" } },
+		]);
+		registerChildAgent(h.pi);
+		h.handlers.get("session_start")?.({}, h.context);
+
+		expect(execute(
+			h.tools.get("child_run")!,
+			{ task: "Review the diff", model: "opus" },
+			h.context,
+		)).rejects.toThrow("exactly one scoped opus model; found 0");
 	});
 
 	test("queues a busy owner failure and exposes its reason in status", async () => {
@@ -109,7 +191,7 @@ describe("child agent extension", () => {
 
 		const started = await execute(
 			h.tools.get("child_run")!,
-			{ task: "Check readiness", model: "anthropic/test-model" },
+			{ task: "Check readiness", model: "fable" },
 			h.context,
 		);
 		await settle();
@@ -121,6 +203,40 @@ describe("child agent extension", () => {
 
 		expect(h.messages[0]?.options).toEqual({ deliverAs: "nextTurn" });
 		expect(status.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("provider unavailable") });
+	});
+
+	test("finalizes a child and preserves its current findings", async () => {
+		const run = deferred<ChildResult>();
+		let finalized = false;
+		let childSignal: AbortSignal | undefined;
+		const h = harness();
+		registerChildAgent(h.pi, {
+			runChild: (input) => {
+				childSignal = input.signal;
+				input.onControl?.({
+					finalize: async () => {
+						finalized = true;
+						run.resolve({ output: "partial findings" });
+					},
+				});
+				return run.promise;
+			},
+		});
+		h.handlers.get("session_start")?.({}, h.context);
+		const started = await execute(
+			h.tools.get("child_run")!,
+			{ task: "Long review", model: "fable" },
+			h.context,
+		);
+		const id = (started.details as { id: string }).id;
+		await settle();
+
+		const result = await execute(h.tools.get("child_finalize")!, { id }, h.context);
+		expect(result.content[0]).toMatchObject({ type: "text", text: `Requested final findings from ${id}.` });
+		expect(finalized).toBeTrue();
+		expect(childSignal?.aborted).toBeFalse();
+		await settle();
+		expect(h.messages[0]?.message.content).toContain("partial findings");
 	});
 
 	test("reports status and stops a child", async () => {
@@ -136,7 +252,7 @@ describe("child agent extension", () => {
 		h.handlers.get("session_start")?.({}, h.context);
 		const started = await execute(
 			h.tools.get("child_run")!,
-			{ task: "Long review", model: "anthropic/test-model" },
+			{ task: "Long review", model: "fable" },
 			h.context,
 		);
 		const id = (started.details as { id: string }).id;
@@ -161,7 +277,7 @@ describe("child agent extension", () => {
 		h.handlers.get("session_start")?.({}, h.context);
 		await execute(
 			h.tools.get("child_run")!,
-			{ task: "Review", model: "anthropic/test-model" },
+			{ task: "Review", model: "fable" },
 			h.context,
 		);
 

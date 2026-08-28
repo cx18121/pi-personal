@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const cxstackRoot = fileURLToPath(new URL("../", import.meta.url));
-const instructions = readFileSync(
+const instructionsTemplate = readFileSync(
 	fileURLToPath(new URL("../resources/reflect.md", import.meta.url)),
 	"utf8",
 )
@@ -11,22 +11,23 @@ const instructions = readFileSync(
 	.trim();
 
 export default function registerReflect(pi: ExtensionAPI) {
-	let pending = false;
+	let pendingInstructions: string | undefined;
 
 	pi.on("before_agent_start", () => {
-		if (!pending) return undefined;
-		pending = false;
+		if (!pendingInstructions) return undefined;
+		const content = pendingInstructions;
+		pendingInstructions = undefined;
 		return {
 			message: {
 				customType: "reflect-instructions",
-				content: instructions,
+				content,
 				display: false,
 			},
 		};
 	});
 
 	pi.on("session_shutdown", () => {
-		pending = false;
+		pendingInstructions = undefined;
 	});
 
 	pi.registerCommand("reflect", {
@@ -37,7 +38,8 @@ export default function registerReflect(pi: ExtensionAPI) {
 				return;
 			}
 
-			pending = true;
+			const sessionPath = ctx.sessionManager.getSessionFile() ?? "(ephemeral current conversation)";
+			pendingInstructions = instructionsTemplate.replace("{{SESSION_PATH}}", sessionPath);
 			const focus = args.trim()
 				? `Reflect on this session.\n\nFocus:\n${args}`
 				: "Reflect on this session.";

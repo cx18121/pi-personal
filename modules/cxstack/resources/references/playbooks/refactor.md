@@ -1,6 +1,6 @@
 # Refactor
 
-Use for behavior-preserving changes to structure, ownership, naming, or representation. Read and copy the Change Spine first, then add these route-specific steps.
+Use for consequential behavior-preserving changes to shared structure, ownership, naming, or representation. Read the Change Spine first and apply these route-specific requirements under its named concepts. Do not copy them into Todo.
 
 Under **Establish route evidence**:
 

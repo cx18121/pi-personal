@@ -9,7 +9,7 @@ Use before implementation when a change meets a structural trigger:
 5. It changes a shared path used by unrelated features.
 6. It has more than one credible whole-design shape.
 
-First ground the design in current callers, data, ownership, and existing policy sources. Then launch one fresh child with `child_run` using an exact available complementary model.
+First ground the design in current callers, data, ownership, and existing policy sources. Then launch one fresh child with `child_run` using the complementary choice from Model roles.
 
 Give it the requested outcome, current-system model, caller-facing usage, proposed data shape and module boundaries, alternatives, constraints, and proof plan. Ask it to find shallow abstractions, leaked internal knowledge, duplicated policy, misplaced ownership, speculative structure, and a simpler complete shape.
 

@@ -14,6 +14,10 @@ const childInstructions = `You are a child of another Pi session.
 
 Follow the authority in the supplied task exactly. Review, investigation, and judgment tasks are read only unless the task explicitly authorizes changes. Use the normal coding tools when they help, including Git and focused verification commands. Treat project instructions and current source as authoritative. Name unresolved facts instead of guessing.`;
 
+export type ChildSessionControl = {
+	finalize: () => Promise<void>;
+};
+
 export type ChildInput = {
 	task: string;
 	model: string;
@@ -21,6 +25,8 @@ export type ChildInput = {
 	agentDir: string;
 	parentRegistry: ModelRegistry;
 	signal: AbortSignal;
+	tools?: string[];
+	onControl?: (control: ChildSessionControl) => void;
 };
 
 export type ChildResult = {
@@ -172,6 +178,7 @@ export async function runChildSession(input: ChildInput): Promise<ChildResult> {
 		modelRuntime,
 		model,
 		thinkingLevel: "high",
+		tools: input.tools,
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(input.cwd),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: true } }),
@@ -183,7 +190,18 @@ export async function runChildSession(input: ChildInput): Promise<ChildResult> {
 	try {
 		if (input.signal.aborted) await session.abort();
 		input.signal.throwIfAborted();
-		await session.prompt(input.task);
+		const prompt = session.prompt(input.task);
+		let finalizing = false;
+		input.onControl?.({
+			finalize: async () => {
+				if (finalizing) return;
+				finalizing = true;
+				await session.steer(
+					"Stop exploring now. Do not call more tools. Return your best current findings, and mark anything incomplete.",
+				);
+			},
+		});
+		await prompt;
 		input.signal.throwIfAborted();
 		const final = finalAssistant(session.messages);
 		if (final?.stopReason === "error") {

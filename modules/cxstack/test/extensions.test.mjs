@@ -275,7 +275,7 @@ describe("CX extension wiring", () => {
 
 		harness.handlers.get("session_compact")({ willRetry: false }, missingContext);
 		expect(harness.messages.at(-1).options).toEqual({ triggerTurn: false });
-		harness.handlers.get("session_compact")({ willRetry: true }, missingContext);
+		harness.handlers.get("session_compact")({ reason: "overflow", willRetry: true }, missingContext);
 		expect(harness.messages.at(-1).options).toEqual({ deliverAs: "steer" });
 	});
 });
@@ -362,7 +362,9 @@ describe("Reflect extension wiring", () => {
 		expect(injected.message.customType).toBe("reflect-instructions");
 		expect(injected.message.content).toContain("Wait for selection");
 		expect(injected.message.content).toContain("CXStack change.");
+		expect(injected.message.content).toContain("`/sessions/current.jsonl`");
 		expect(injected.message.content).not.toContain("{{CXSTACK_ROOT}}");
+		expect(injected.message.content).not.toContain("{{SESSION_PATH}}");
 		expect(harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx)).toBeUndefined();
 	});
 });

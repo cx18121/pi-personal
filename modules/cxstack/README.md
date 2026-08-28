@@ -34,9 +34,9 @@ CX asks the agent to:
 - Investigate factual questions instead of asking you to decide them.
 - Verify the promised surface and stop confidence at the evidence.
 
-Small tasks stay direct. Every nontrivial task names one of eight routes, reads its playbook, and copies the required steps into Todo. Investigation, implementation, review, and delivery stay separate, and a skipped required step remains visible with a reason.
+Direct is the default for ordinary questions, recommendations, reversible local work, and small fixes. Work earns a route only when a wrong result is costly, hidden, or hard to undo; when it materially affects production, persistent data, security, money, deployment, shared interfaces, or durable architecture; or when review or delivery is explicitly requested. A route names the authority boundary, not the amount of ceremony. Todo records actual independent work, dependencies, and waiting gates, never copied playbook steps. Direct work can escalate when consequences appear, and routed work can return to direct before process starts.
 
-CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries the active route steps.
+CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries actual unfinished work when a task needs one.
 
 ## Audit
 
@@ -64,6 +64,14 @@ Reflect proposes exact changes and waits for your selection. It does not write m
 
 Reflect works whether CX is active or not.
 
+## Correction loop
+
+In an active CX session, the model records broad correction candidates after fully answering your feedback. It appends a structured marker to the same answer; the correction extension removes that marker before display, stores the interpretation with exact session entry references, and shows a compact undoable notification. Capture adds no tool call or model turn. `correction_log` exists only for approved Reflect backfills.
+
+Correction candidates live in a private local event log outside normal prompt context. Grouping runs asynchronously against correction records only. A ready proposal must name a proof plan, earn any new eval it adds, and assign an optional intervention to exactly one owner: code or test, AGENTS.md, CXStack, a skill, memory, or papercuts. Ready patterns appear at a later natural handoff and remain reviewable through `/corrections`. Accepting one proposal authorizes that exact local action and focused verification; failed proof rejects the intervention, while commit, push, publication, and deployment remain separate.
+
+Reflect can offer a missed correction for one-click backfill when the active model failed to record it.
+
 ## Improve CXStack
 
 Reflect can classify a confirmed recurring failure as a CXStack change. It checks whether architecture can remove the failure first, then whether an automated check can catch it. It changes guidance only when code cannot enforce the behavior.
@@ -78,12 +86,12 @@ Use your next small task with a clear expected result. State the delivery limit 
 
 Watch whether the agent:
 
-- Names the right route and copies its steps into Todo.
+- Keeps ordinary work direct and uses the operational consequence test before naming a route.
 - Keeps investigation read only until implementation is explicit.
 - Asks only when your judgment is needed.
 - Changes direction when evidence contradicts its first approach.
 - Returns to Investigation and Decision when a material fork appears.
-- Runs the required maintainability and correctness reviews.
+- Keeps true routes proportional and runs maintainability or correctness reviews only when their risk earns them.
 - Verifies the promised surface.
 - States the real delivery status without claiming more than it proved.
 
@@ -93,8 +101,10 @@ Send another prompt without `/cx`, then try `/cx off` and `/cx` to restore it. A
 
 - [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command, Pi session events, and version markers.
 - [`extensions/audit.ts`](extensions/audit.ts) owns the `/cx-audit` command.
+- [`extensions/corrections.ts`](extensions/corrections.ts) owns correction capture, grouping, undo, proposals, and `/corrections`.
 - [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
 - [`lib/audit.ts`](lib/audit.ts) selects recent sessions and extracts only CX version and reference markers.
+- [`lib/corrections.ts`](lib/corrections.ts) owns correction event storage, provenance, state, and grouping validation.
 - [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
 - [`resources/references`](resources/references/) contains the eight route playbooks, shared change spine, child review contracts, and conditional guidance.
 - [`resources/audit.md`](resources/audit.md) contains the private cross-session audit process.

@@ -6,11 +6,12 @@ Use child models only for bounded contributions that earn their cost. These are 
 
 - Prefer GPT 5.6 Sol for implementation, debugging, tooling, and exact procedures.
 - Prefer Claude Fable for intent, product and design judgment, synthesis, and long context.
+- Prefer Claude Opus for the most demanding independent judgment when the extra cost earns its place.
 - Prefer the complementary family for an independent challenge.
 
 Let the task override these defaults when another model is a better fit. Do not build a classifier or route by keywords.
 
-Before `child_run`, choose an exact `provider/model` from the current Pi registry. Use `pi --list-models <provider>` when the exact identifier is not already known. A listed model can still fail authentication or quota checks; that failure blocks the child result and is not a clean review. Report it or choose another configured exact model instead of guessing an identifier.
+`child_run` exposes only `fable`, `opus`, and `openai`. For an independent challenge from an OpenAI parent, choose `fable` by default and `opus` only when the task needs its stronger judgment. From a Claude parent, choose `openai`. A provider authentication or quota failure blocks the child result; report it instead of routing through another provider.
 
 Give each child a self-contained task, current primary evidence, exact source paths, authority boundary, success condition, and output contract. Independent reviews use fresh context by construction. One child is enough unless separate questions genuinely need separate contexts.
 

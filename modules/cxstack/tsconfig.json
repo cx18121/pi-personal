@@ -12,9 +12,11 @@
   },
   "include": [
     "extensions/audit.ts",
+    "extensions/corrections.ts",
     "extensions/cx.ts",
     "extensions/reflect.ts",
     "lib/audit.ts",
+    "lib/corrections.ts",
     "lib/cx.ts"
   ]
 }

@@ -313,6 +313,20 @@ describe("CX package resources", () => {
 		expect(CX_MARKER.split(/\s+/)).toHaveLength(18);
 	});
 
+	test("keeps Todo tied to actual unfinished work", () => {
+		const kernel = readFileSync(join(moduleRoot, "resources/kernel.md"), "utf8");
+		const playbookRoot = join(moduleRoot, "resources/references/playbooks");
+		const changeSpine = readFileSync(join(playbookRoot, "build-and-change.md"), "utf8");
+		expect(kernel).toContain("When Todo exists, reconcile it before waiting or finishing");
+		expect(kernel).toContain("Create Todo only for independent work, dependencies, or waiting gates");
+		expect(changeSpine).toContain("Todo records only actual independent work, dependencies, and waiting gates");
+		expect(changeSpine).not.toContain("Create exactly five Todo items");
+		for (const route of ["feature", "diagnose-and-fix", "performance", "refactor", "prototype"]) {
+			const content = readFileSync(join(playbookRoot, `${route}.md`), "utf8");
+			expect(content).toContain("Do not copy them into Todo");
+		}
+	});
+
 	test("resolves every kernel reference from the installed resource root", () => {
 		const resourceRoot = join(moduleRoot, "resources");
 		const kernel = renderCxKernel(
@@ -324,18 +338,23 @@ describe("CX package resources", () => {
 		expect(references.every((reference) => existsSync(reference))).toBe(true);
 	});
 
-	test("routes Reflect through exact current complementary models", () => {
+	test("routes Reflect through the bounded child interface", () => {
 		const reflect = readFileSync(join(moduleRoot, "resources/reflect.md"), "utf8");
-		expect(reflect).toContain("pi --list-models anthropic");
-		expect(reflect).toContain("anthropic/claude-fable-5");
-		expect(reflect).toContain("openai-codex/gpt-5.6-sol");
-		expect(reflect).toContain("Never guess, shorten, or translate a model id.");
+		expect(reflect).toContain("when `child_run` is available");
+		expect(reflect).toContain("complementary model from Model roles");
+		expect(reflect).not.toContain("pi --list-models");
+		expect(reflect).not.toContain("context: \"fresh\"");
+		expect(reflect).not.toContain("mission: false");
+		expect(reflect).not.toContain("artifacts: false");
+		expect(reflect).toContain("Missed correction candidate for the correction log");
+		expect(reflect).toContain("call `correction_log`");
 	});
 
 	test("registers extension commands without public skill bypasses", () => {
 		const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 		expect(manifest.pi.skills).toBeUndefined();
 		expect(manifest.pi.prompts).toBeUndefined();
+		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/corrections.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/audit.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/cx.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/reflect.ts");

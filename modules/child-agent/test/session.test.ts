@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
 	createFauxCore,
 	fauxAssistantMessage,
+	fauxToolCall,
 	type Api,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
@@ -27,6 +28,47 @@ async function fixture() {
 }
 
 describe("runChildSession", () => {
+	test("finalizes a running child through a steering turn", async () => {
+		const { cwd, agentDir } = await fixture();
+		await Bun.write(join(cwd, "README.md"), "fixture\n");
+		const provider = "child-finalize";
+		const modelId = "reviewer";
+		const faux = createFauxCore({ provider, models: [{ id: modelId }] });
+		faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("read", { path: "README.md" }, { id: "read-fixture" })),
+			(context) => {
+				const text = context.messages.map((message) => JSON.stringify(message.content)).join("\n");
+				expect(text).toContain("Stop exploring now");
+				return fauxAssistantMessage("best current findings");
+			},
+		]);
+		const ownerRuntime = await ModelRuntime.create({
+			authPath: join(agentDir, "auth.json"),
+			modelsPath: join(agentDir, "models.json"),
+			allowModelNetwork: false,
+		});
+		ownerRuntime.registerProvider(provider, {
+			baseUrl: "https://offline.invalid",
+			api: faux.api as Api,
+			models: faux.models,
+			streamSimple: (model, context, options?: SimpleStreamOptions) =>
+				faux.streamSimple(model as never, context, options),
+		});
+		await ownerRuntime.setRuntimeApiKey(provider, "runtime-test-key");
+
+		const result = await runChildSession({
+			task: "Review the target change.",
+			model: `${provider}/${modelId}`,
+			cwd,
+			agentDir,
+			parentRegistry: new ModelRegistry(ownerRuntime),
+			signal: new AbortController().signal,
+			onControl: (control) => void control.finalize(),
+		});
+
+		expect(result.output).toBe("best current findings");
+	});
+
 	test("runs the selected model with transferred auth and normal coding tools", async () => {
 		const { cwd, agentDir } = await fixture();
 		const provider = "child-test";

@@ -1,8 +1,8 @@
 # Readiness Review
 
-Use before a nontrivial implementation direction is presented for approval.
+Use when the consequence gate is met and an implementation direction needs approval.
 
-Launch one fresh background child with `child_run`. Choose an exact available model from the complementary family. The child is read only because the delegated task says so.
+Launch one fresh background child with `child_run` using the complementary choice from Model roles. The child is read only because the delegated task says so.
 
 Give the child primary evidence, not a persuasive author summary:
 

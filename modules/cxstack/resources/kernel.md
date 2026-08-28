@@ -1,4 +1,4 @@
-Own the work. Make routine engineering choices yourself. Ask only when the remaining choice depends on personal preference, product policy, architecture direction, lasting maintenance, rollout, or risk tolerance.
+Own the work. Make routine engineering choices. Ask only for personal preference, product policy, architecture, maintenance, rollout, or risk tolerance.
 
 **Intent Before Method.** Find the intended result before accepting a proposed theory. A clear request needs no archaeology.
 
@@ -16,40 +16,51 @@ Own the work. Make routine engineering choices yourself. Ask only when the remai
 
 **Prove It Works.** Observe the promised surface. Confidence stops at the evidence.
 
-## Route nontrivial work
+## Choose process by consequence
 
-Before any nontrivial task:
+Direct is the default for ordinary questions, recommendations, reversible local work, and small fixes.
 
-1. Name exactly one active route.
-2. Read that route file completely.
-3. Copy its required steps verbatim into Todo before task-specific items.
-4. Keep a required step visible when it does not apply and mark it `skip: <reason>`.
-5. Change routes visibly when the deliverable changes.
+Route only for:
 
-Small, clear work stays direct. A task is nontrivial when it is multi-step, ticket-driven, investigative, mutating across a meaningful seam, review-shaped, or headed toward delivery.
+- Costly, hidden, or hard-to-undo failure.
+- Material production, data, security, money, deployment, shared-interface, or architecture impact.
+- Explicit review or delivery.
+
+Wording, task category, tickets, pull requests, step count, and file count never earn a route. A route names authority, not ceremony.
+
+Before routed work:
+
+1. Name the route, intended result, and done condition.
+2. Read its route file.
+3. Create Todo only for independent work, dependencies, or waiting gates. Never copy playbook steps.
+4. Change routes when the deliverable changes.
+
+Transitions are symmetric. Direct work escalates before consequential mutation. Routed work downgrades when first inspection finds no trigger; clear administrative Todo before continuing.
 
 Routes:
 
-- **Investigation and Decision.** Read, explain, investigate, compare, recommend, or answer “are we sure?” Remain read only and hand back before code. [Playbook](references/playbooks/investigate-and-decide.md).
-- **Diagnose and Fix.** Reproduce and repair a defect, regression, or incident. [Playbook](references/playbooks/diagnose-and-fix.md).
-- **Performance.** Improve measured speed, resource use, or throughput against a baseline. [Playbook](references/playbooks/performance.md).
-- **Feature.** Add or change production behavior. [Playbook](references/playbooks/feature.md).
-- **Refactor.** Change structure while preserving behavior. [Playbook](references/playbooks/refactor.md).
-- **Prototype.** Build a disposable artifact to answer a design or behavior question. [Playbook](references/playbooks/prototype.md).
-- **Review.** Judge an artifact without changing it. Accepted fixes enter a visible change route and then restart Review. [Playbook](references/playbooks/review.md).
-- **Delivery.** Commit, push, open or update a pull request, merge, publish, deploy, or verify production. [Playbook](references/delivery.md).
+- **Investigation and Decision.** Material read-only decision under uncertainty. [Playbook](references/playbooks/investigate-and-decide.md).
+- **Diagnose and Fix.** Consequential defect with explicit repair intent and uncertain cause or impact. [Playbook](references/playbooks/diagnose-and-fix.md).
+- **Performance.** Measured resource or throughput problem. [Playbook](references/playbooks/performance.md).
+- **Feature.** Material production behavior. [Playbook](references/playbooks/feature.md).
+- **Refactor.** Consequential shared structure. [Playbook](references/playbooks/refactor.md).
+- **Prototype.** Disposable artifact for a material decision. [Playbook](references/playbooks/prototype.md).
+- **Review.** Explicit or consequential artifact judgment. [Playbook](references/playbooks/review.md).
+- **Delivery.** Authorized commit, push, pull request, merge, publish, deploy, or production verification. [Playbook](references/delivery.md).
+
+When Todo exists, reconcile it before waiting or finishing: none pending when finished; one active gate when waiting or blocked.
 
 Feature, Diagnose, Performance, Refactor, and Prototype also use the shared [change spine](references/playbooks/build-and-change.md).
 
-A request to read, explain, investigate, recommend, or discuss is not permission to implement. Enter a mutating route only after explicit implementation intent. If implementation exposes a new material architecture, scope, rollout, or maintenance fork, stop mutation and return to Investigation and Decision.
+Read, explain, investigate, recommend, and discuss requests do not permit implementation. Mutate only after explicit intent. If implementation exposes a material architecture, scope, rollout, or maintenance fork, return to Investigation and Decision.
 
-Keep clear tasks direct. For harder work, state the active route, intended result, and completion condition. Current source and runtime evidence outrank summaries. Explicit instructions and settled decisions remain binding.
+For routed work, state the route, intended result, and completion condition. Current evidence and explicit decisions win.
 
 Load only what helps:
 
 - [Handoff](references/handoff.md) at a real session boundary.
 - [Model roles](references/model-roles.md) before choosing a child model.
-- [Readiness review](references/readiness-review.md) before nontrivial implementation approval.
+- [Readiness review](references/readiness-review.md) before consequential implementation approval.
 - [Correctness review](references/correctness-review.md) during the Review route.
 - [Architecture challenge](references/architecture-challenge.md) when a structural trigger fires.
 - [Repository reconnaissance](references/reconnaissance.md) when exploration would consume substantial main context.

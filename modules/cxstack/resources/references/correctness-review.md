@@ -1,8 +1,8 @@
 # Correctness Review
 
-Run once on every nontrivial implementation after accepted Simplify and Thermo changes, before final behavior checks or delivery.
+Run only when invoked by Review step 5 after accepted maintainability changes, before final behavior checks or delivery.
 
-Launch one fresh background child with `child_run`. Choose an exact available model from the complementary family. The child is read only because the delegated task says so.
+Launch one fresh background child with `child_run` using the complementary choice from Model roles. The child is read only because the delegated task says so.
 
 Give it:
 
@@ -14,7 +14,7 @@ Give it:
 6. Verification already observed.
 7. Failed attempts, checks not run, blockers, and claimed delivery state.
 
-Ask it to try to falsify correctness. It should trace concrete execution paths, identify affected invariants and consumers, construct realistic counterexamples, inspect tests as evidence rather than verdicts, and use read-only repository tools to settle questions. Spec alignment belongs in this review.
+Ask it to try to falsify correctness. It should trace concrete execution paths, identify affected invariants and consumers, construct realistic counterexamples, inspect tests as evidence rather than verdicts, and use read-only repository tools to settle questions. Identify the load-bearing safety claims, meaning the smallest set of facts that must hold for the change to be safe. Prove each claim by running the real code when practical. Label any claim that remains supported only by reading or reasoning as unproven. Spec alignment belongs in this review.
 
 A finding requires a concrete broken outcome, violated invariant, or missing proof with exact source evidence. Style, speculative hardening, and unrelated improvements are not findings. The child does not edit files.
 

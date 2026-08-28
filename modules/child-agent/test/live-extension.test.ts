@@ -51,15 +51,20 @@ test("runs a real background child through a Pi parent session", async () => {
 	await Promise.all([mkdir(cwd), mkdir(agentDir), mkdir(sessionsDir)]);
 	await writeFile(join(cwd, "README.md"), "child live fixture\n");
 
-	const providerId = "child-live";
+	const driverProviderId = "openai-codex";
+	const reviewerProviderId = "anthropic";
 	const driverModel = "driver";
-	const reviewerModel = "reviewer";
-	const driver = createFauxCore({ provider: providerId, models: [{ id: driverModel }] });
-	const reviewer = createFauxCore({ provider: providerId, models: [{ id: reviewerModel }] });
+	const reviewerFableModel = "claude-fable-reviewer";
+	const reviewerOpusModel = "claude-opus-reviewer";
+	const driver = createFauxCore({ provider: driverProviderId, models: [{ id: driverModel }] });
+	const reviewer = createFauxCore({
+		provider: reviewerProviderId,
+		models: [{ id: reviewerFableModel }, { id: reviewerOpusModel }],
+	});
 	driver.setResponses([
 		fauxAssistantMessage(fauxToolCall("child_run", {
 			task: "Read README.md, then return exactly CHILD_LIVE_OK.",
-			model: `${providerId}/${reviewerModel}`,
+			model: "fable",
 		}, { id: "start-child" })),
 		fauxAssistantMessage("MAIN_AVAILABLE"),
 		fauxAssistantMessage("MAIN_RECEIVED_CHILD"),
@@ -74,31 +79,31 @@ test("runs a real background child through a Pi parent session", async () => {
 		modelsPath: join(agentDir, "models.json"),
 		allowModelNetwork: false,
 	});
-	const provider: Provider = {
-		id: providerId,
-		name: "Child live provider",
+	const provider = (
+		id: string,
+		name: string,
+		core: typeof driver,
+	): Provider => ({
+		id,
+		name,
 		auth: {
 			apiKey: {
-				name: "Child live API key",
+				name: `${name} API key`,
 				resolve: async ({ credential }) => credential?.key
 					? { auth: { apiKey: credential.key } }
 					: undefined,
 			},
 		},
-		getModels: () => [...driver.models, ...reviewer.models],
-		stream: (model, context, options) => (
-			model.id === reviewerModel
-				? reviewer.stream(model as never, context, options)
-				: driver.stream(model as never, context, options)
-		),
+		getModels: () => core.models,
+		stream: (model, context, options) => core.stream(model as never, context, options),
 		streamSimple: (model, context, options?: SimpleStreamOptions) => (
-			model.id === reviewerModel
-				? reviewer.streamSimple(model as never, context, options)
-				: driver.streamSimple(model as never, context, options)
+			core.streamSimple(model as never, context, options)
 		),
-	};
-	runtime.registerNativeProvider(provider);
-	await runtime.setRuntimeApiKey(providerId, "runtime-test-key");
+	});
+	runtime.registerNativeProvider(provider(driverProviderId, "Driver", driver));
+	runtime.registerNativeProvider(provider(reviewerProviderId, "Reviewer", reviewer));
+	await runtime.setRuntimeApiKey(driverProviderId, "driver-runtime-test-key");
+	await runtime.setRuntimeApiKey(reviewerProviderId, "reviewer-runtime-test-key");
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir,
@@ -111,11 +116,15 @@ test("runs a real background child through a Pi parent session", async () => {
 	});
 	await loader.reload();
 	const sessionManager = SessionManager.create(cwd, sessionsDir);
+	const selectedDriver = runtime.getModel(driverProviderId, driverModel)!;
+	const selectedFable = runtime.getModel(reviewerProviderId, reviewerFableModel)!;
+	const selectedOpus = runtime.getModel(reviewerProviderId, reviewerOpusModel)!;
 	const parent = await createAgentSession({
 		cwd,
 		agentDir,
 		modelRuntime: runtime,
-		model: runtime.getModel(providerId, driverModel),
+		model: selectedDriver,
+		scopedModels: [{ model: selectedDriver }, { model: selectedFable }, { model: selectedOpus }],
 		tools: ["child_run", "child_status", "child_stop"],
 		resourceLoader: loader,
 		sessionManager,

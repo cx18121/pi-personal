@@ -43,13 +43,13 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`modules/child-agent/lib/session.ts`](modules/child-agent/lib/session.ts) creates the fixed read-only Pi child session and transfers provider authentication.
 - [`modules/cxstack/lib/cx.ts`](modules/cxstack/lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
 - [`modules/cxstack/lib/audit.ts`](modules/cxstack/lib/audit.ts) finds recent CX sessions and extracts only version and reference markers for the audit manifest.
+- [`modules/cxstack/lib/corrections.ts`](modules/cxstack/lib/corrections.ts) stores correction evidence, exact session provenance, grouping snapshots, and proposal decisions.
 - [`lib/reminders.ts`](lib/reminders.ts) validates reminder data and groups reminders by date for the `/reminders` view.
 - [`lib/time-context.ts`](lib/time-context.ts) formats local time and calculates elapsed session time for the time tool.
 - [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.
 - [`scripts/apple-reminders.js`](scripts/apple-reminders.js) uses macOS automation to read and change Apple Reminders.
-- [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts) and [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs) test CX command, session, compaction, packaging, and handler behavior.
-- [`modules/cxstack/test/overflow-probe.mjs`](modules/cxstack/test/overflow-probe.mjs) forces a synthetic Pi context overflow and verifies kernel delivery through retry.
-- [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check with synthetic data. It is manual because it makes real model calls.
+- [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts), [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs), and the correction tests cover CX command, routing, session, correction, packaging, and handler behavior.
+- [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check through `child_run` with synthetic data. It is manual because it makes real model calls.
 - [`test/time-reminders.test.ts`](test/time-reminders.test.ts) tests the shared time and reminder behavior.
 
 ## Origins

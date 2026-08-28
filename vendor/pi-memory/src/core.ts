@@ -538,14 +538,34 @@ function appendChecklistItem(content: string, text: string, sessionId: string | 
   return `${heading}\n${metadataLine(sessionId)}\n- [ ] ${text.trim()}\n`;
 }
 
-function toggleChecklist(content: string, needle: string, done: boolean) {
-  const lower = needle.toLocaleLowerCase();
-  const lines = content.split("\n");
-  const index = lines.findIndex((line) => {
+function matchingChecklistIndex(
+  lines: string[],
+  needle: string,
+  eligible: (match: RegExpMatchArray) => boolean,
+  label: string,
+) {
+  const wanted = normalizeForDuplicate(needle);
+  const candidates = lines.flatMap((line, index) => {
     const match = line.match(CHECKBOX_REGEX);
-    return match && (match[1].toLowerCase() === "x") !== done && match[2].toLocaleLowerCase().includes(lower);
+    return match && eligible(match) ? [{ index, text: normalizeForDuplicate(match[2]) }] : [];
   });
-  if (index < 0) throw new Error(`No matching ${done ? "open" : "done"} item found.`);
+  const exact = candidates.filter((candidate) => candidate.text === wanted);
+  const matches = exact.length > 0 ? exact : candidates.filter((candidate) => candidate.text.includes(wanted));
+  const description = label ? `${label} ` : "";
+  if (matches.length === 0) throw new Error(`No matching ${description}item found.`);
+  if (matches.length > 1) throw new Error(`Multiple matching ${description}items found. Use the exact unique item text.`);
+  return matches[0].index;
+}
+
+function toggleChecklist(content: string, needle: string, done: boolean) {
+  const lines = content.split("\n");
+  const label = done ? "open" : "done";
+  const index = matchingChecklistIndex(
+    lines,
+    needle,
+    (match) => (match[1].toLowerCase() === "x") !== done,
+    label,
+  );
   const match = lines[index].match(CHECKBOX_REGEX)!;
   lines[index] = `- [${done ? "x" : " "}] ${match[2]}`;
   return lines.join("\n");
@@ -566,13 +586,8 @@ function clearDoneChecklist(content: string) {
 }
 
 function editChecklist(content: string, needle: string, replacement: string) {
-  const lower = needle.toLocaleLowerCase();
   const lines = content.split("\n");
-  const index = lines.findIndex((line) => {
-    const match = line.match(CHECKBOX_REGEX);
-    return match?.[2].toLocaleLowerCase().includes(lower);
-  });
-  if (index < 0) throw new Error("No matching item found.");
+  const index = matchingChecklistIndex(lines, needle, () => true, "");
   const match = lines[index].match(CHECKBOX_REGEX)!;
   lines[index] = `- [${match[1].toLowerCase() === "x" ? "x" : " "}] ${replacement.trim()}`;
   return lines.join("\n");

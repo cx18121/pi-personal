@@ -496,6 +496,24 @@ describe("scratchpads and papercuts", () => {
     expect(parseChecklist(content).filter((item) => !item.done).map((item) => item.text)).toEqual(["Second task"]);
   });
 
+  test("rejects ambiguous matches and prefers exact item text", () => {
+    const filePath = path.join(tempDir, "SCRATCHPAD.md");
+    const original = "- [ ] After Charlie finishes PAN-306 cleanup\n- [ ] After Charlie finishes PAN-307 cleanup\n";
+    atomicWriteFile(filePath, original);
+
+    expect(() => mutateChecklist({ filePath, action: "done", text: "After Charlie finishes" })).toThrow(
+      "Multiple matching open items found",
+    );
+    expect(readText(filePath)).toBe(original);
+
+    mutateChecklist({ filePath, action: "done", text: "After Charlie finishes PAN-307 cleanup" });
+    expect(readText(filePath)).toContain("- [ ] After Charlie finishes PAN-306 cleanup");
+    expect(readText(filePath)).toContain("- [x] After Charlie finishes PAN-307 cleanup");
+    expect(() =>
+      mutateChecklist({ filePath, action: "edit", text: "After Charlie finishes", replacement: "replacement" }),
+    ).toThrow("Multiple matching items found");
+  });
+
   test("supports root papercut edit and resolve", () => {
     const filePath = path.join(tempDir, "PAPERCUTS.md");
     mutateChecklist({ filePath, action: "add", text: "slow startup" });

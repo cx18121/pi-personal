@@ -15,8 +15,10 @@ import {
 	correctionsFile,
 	createCorrectionCandidate,
 	extractCorrectionMarker,
+	fallbackCorrectionInterpretation,
 	groupingInput,
 	inferCorrectionSource,
+	looksLikeCorrection,
 	parseGroupingOutput,
 	readCorrectionEvents,
 	type CorrectionCandidate,
@@ -89,6 +91,7 @@ export default function registerCorrections(
 	const group = dependencies.group ?? defaultGroup;
 	let grouping: Promise<void> | undefined;
 	let groupAgain = false;
+	let pendingCorrectionFeedback: string | undefined;
 	let groupingController: AbortController | undefined;
 
 	const activeState = () => correctionState(readCorrectionEvents(filePath));
@@ -165,7 +168,11 @@ export default function registerCorrections(
 
 	pi.on("before_agent_start", (event, ctx) => {
 		if (!restoreCxState(ctx.sessionManager.getEntries()).active) return undefined;
-		return { systemPrompt: `${event.systemPrompt}\n\n${captureInstructions}` };
+		pendingCorrectionFeedback = looksLikeCorrection(event.prompt) ? event.prompt : undefined;
+		const fallback = pendingCorrectionFeedback
+			? "\nThis user message has broad correction signals. If you do not emit a specific correction marker, the harness will record a weak unclassified candidate."
+			: "";
+		return { systemPrompt: `${event.systemPrompt}\n\n${captureInstructions}${fallback}` };
 	});
 
 	pi.on("message_end", (event, ctx) => {
@@ -188,18 +195,24 @@ export default function registerCorrections(
 		const safeContent = content.some((part) => part.type === "text" || part.type === "toolCall")
 			? content
 			: [...content, { type: "text" as const, text: "I recorded this correction." }];
-		if (!changed) return undefined;
+		if (!changed && (event.message.stopReason === "toolUse" || !pendingCorrectionFeedback)) return undefined;
+		const usedFallback = !interpretation && Boolean(pendingCorrectionFeedback);
+		if (usedFallback) {
+			interpretation = fallbackCorrectionInterpretation(ctx.sessionManager.getBranch(), pendingCorrectionFeedback!);
+		}
+		pendingCorrectionFeedback = undefined;
 		if (interpretation) {
 			try {
 				const candidate = recordCandidate(interpretation, ctx);
-				if (ctx.hasUI) ctx.ui.notify(`Correction recorded · ${candidate.category} · ${candidate.strength}. Undo: /corrections undo ${candidate.id}`, "info");
+				const prefix = usedFallback ? "Possible correction recorded" : "Correction recorded";
+				if (ctx.hasUI) ctx.ui.notify(`${prefix} · ${candidate.category} · ${candidate.strength}. Undo: /corrections undo ${candidate.id}`, "info");
 			} catch (error) {
 				if (ctx.hasUI) ctx.ui.notify(`Correction capture failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 			}
 		} else if (ctx.hasUI) {
 			ctx.ui.notify("Ignored an invalid correction marker.", "warning");
 		}
-		return { message: { ...event.message, content: safeContent } };
+		return changed ? { message: { ...event.message, content: safeContent } } : undefined;
 	});
 
 	pi.on("session_start", (_event, ctx) => {

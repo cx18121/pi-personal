@@ -31,9 +31,10 @@ An intervention is optional and has exactly one owner:
 
 - `code_or_test`: mechanically enforceable behavior.
 - `agents`: baseline behavior for nearly every task, even with CX off.
+- `project_docs`: maintained human-facing product, system, integration, or workflow documentation that people intentionally browse. Do not use it as a store for isolated incident history, rejected approaches, or agent-only gotchas.
 - `cxstack`: active work process, routing, ownership, or verification.
 - `skill`: conditional workflow or domain guidance.
-- `memory`: stable non-derivable fact, preference, or decision.
+- `memory`: stable non-derivable fact, preference, decision, rejected approach, incident history, or technical gotcha that helps future agent judgment but does not earn maintained human-facing documentation.
 - `papercut`: confirmed friction whose intervention is not ready.
 
 Intervention shape:

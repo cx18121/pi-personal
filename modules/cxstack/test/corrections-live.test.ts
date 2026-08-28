@@ -25,7 +25,7 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-test("captures and removes a correction marker without another model turn", async () => {
+test("captures markers and correction signals without another model turn", async () => {
 	const root = await mkdtemp(join(tmpdir(), "corrections-live-"));
 	roots.push(root);
 	const cwd = join(root, "repo");
@@ -42,6 +42,7 @@ test("captures and removes a correction marker without another model turn", asyn
 			fauxText("You're right. There is no current failure, so we should defer it."),
 			fauxText(`<cx-correction>{"category":"prioritization","agentDecision":"Proposed a transcript sanitizer without a current failure","userFeedback":"The sanitizer is unnecessary","expectedBehavior":"Compare against doing nothing before proposing machinery","strength":"strong"}</cx-correction>`),
 		]),
+		fauxAssistantMessage("Agreed. I will keep it in project memory."),
 		fauxAssistantMessage("Continued without replay errors."),
 	]);
 	const runtime = await ModelRuntime.create({
@@ -99,14 +100,26 @@ test("captures and removes a correction marker without another model turn", asyn
 		expect(assistants).toHaveLength(2);
 		expect(assistants[1]?.content.some((part) => part.type === "text" && part.text === "You're right. There is no current failure, so we should defer it.")).toBeTrue();
 		expect(assistants[1]?.content.some((part) => part.type === "text" && part.text === "")).toBeFalse();
-		await parent.session.prompt("Continue.");
+		await parent.session.prompt("I don't think that technical note belongs in the wiki.");
 		expect(parent.session.messages.filter((message) => message.role === "assistant")).toHaveLength(3);
+		await parent.session.prompt("Continue.");
+		expect(parent.session.messages.filter((message) => message.role === "assistant")).toHaveLength(4);
 		const state = correctionState(readCorrectionEvents(correctionsFile(agentDir)));
-		expect(state.candidates).toHaveLength(1);
+		expect(state.candidates).toHaveLength(2);
 		expect(state.candidates[0]?.source).toMatchObject({
 			requestEntryId: expect.any(String),
 			assistantEntryId: expect.any(String),
 			correctionEntryId: expect.any(String),
+		});
+		expect(state.candidates[1]).toMatchObject({
+			category: "unclassified correction signal",
+			strength: "weak",
+			userFeedback: "I don't think that technical note belongs in the wiki.",
+			source: {
+				requestEntryId: expect.any(String),
+				assistantEntryId: expect.any(String),
+				correctionEntryId: expect.any(String),
+			},
 		});
 	} finally {
 		parent.session.dispose();

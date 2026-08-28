@@ -8,7 +8,9 @@ import {
 	correctionsFile,
 	createCorrectionCandidate,
 	extractCorrectionMarker,
+	fallbackCorrectionInterpretation,
 	inferCorrectionSource,
+	looksLikeCorrection,
 	parseGroupingOutput,
 	readCorrectionEvents,
 } from "../lib/corrections.ts";
@@ -18,7 +20,8 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-const sourceEntries = () => [
+type TestSessionEntry = { type: string; id: string; message: { role: string; content?: unknown } };
+const sourceEntries = (): TestSessionEntry[] => [
 	{ type: "message", id: "request", message: { role: "user" } },
 	{ type: "message", id: "answer", message: { role: "assistant" } },
 	{ type: "message", id: "correction", message: { role: "user" } },
@@ -77,6 +80,23 @@ describe("correction storage", () => {
 		})).toThrow("is not a user message");
 	});
 
+	test("flags broad correction signals and creates a weak fallback", () => {
+		expect(looksLikeCorrection("I don't think so. You're confused about what the wiki is for.")).toBe(true);
+		expect(looksLikeCorrection("Are you sure we need this machinery?")).toBe(true);
+		expect(looksLikeCorrection("I feel like I just corrected u, but nothing surfaced.")).toBe(true);
+		expect(looksLikeCorrection("That should've been a correction.")).toBe(true);
+		expect(looksLikeCorrection("Please add another unit test.")).toBe(false);
+		const entries = sourceEntries();
+		entries[1]!.message.content = [{ type: "text", text: "Moved the technical notes to the wiki." }];
+		expect(fallbackCorrectionInterpretation(entries, "I don't think those belong in the wiki.")).toEqual({
+			category: "unclassified correction signal",
+			agentDecision: "Moved the technical notes to the wiki.",
+			userFeedback: "I don't think those belong in the wiki.",
+			expectedBehavior: "Review this feedback to determine how the previous response should have differed.",
+			strength: "weak",
+		});
+	});
+
 	test("validates grouping evidence and creates stable pattern ids", () => {
 		const recorded = candidate();
 		const output = JSON.stringify([{
@@ -129,6 +149,7 @@ describe("correction storage", () => {
 			reason: "A strong correction identifies baseline behavior.",
 		}]);
 		expect(parseGroupingOutput(intervention, [recorded])[0]?.intervention?.owner).toBe("agents");
+		expect(parseGroupingOutput(intervention.replace('"agents"', '"project_docs"'), [recorded])[0]?.intervention?.owner).toBe("project_docs");
 
 		const uselessEval = intervention
 			.replace('"existing_test"', '"new_live_eval"')

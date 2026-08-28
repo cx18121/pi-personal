@@ -3,7 +3,7 @@ import { appendFileSync, chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type CorrectionStrength = "weak" | "strong";
-export type CorrectionOwner = "code_or_test" | "agents" | "cxstack" | "skill" | "memory" | "papercut";
+export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
 export type CorrectionProofKind = "existing_test" | "new_mechanical_eval" | "new_live_eval" | "direct_observation" | "no_additional_proof";
 
 export type CorrectionInterpretation = {
@@ -80,7 +80,7 @@ export type CorrectionState = {
 type SessionEntry = {
 	id?: unknown;
 	type?: unknown;
-	message?: { role?: unknown };
+	message?: { role?: unknown; content?: unknown };
 };
 
 const bounded = (value: string, max = 600) => value.replace(/\s+/g, " ").trim().slice(0, max);
@@ -88,6 +88,43 @@ const text = (value: unknown) => typeof value === "string" ? value : undefined;
 const stringArray = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string")
 	? value
 	: undefined;
+const messageText = (content: unknown) => {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((part): part is { type: "text"; text: string } => Boolean(part) && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+		.map(({ text }) => text)
+		.join("\n");
+};
+
+export function looksLikeCorrection(input: string): boolean {
+	const text = input.replace(/\s+/g, " ").toLowerCase();
+	return [
+		/\b(i|we) (?:do not|don't|dont) think\b/,
+		/\b(?:you are|you're|ur|u are) (?:wrong|confused|missing|overthinking)\b/,
+		/\b(?:that|this) (?:is|seems|feels) (?:wrong|unnecessary|overkill|too much|confusing)\b/,
+		/\b(?:why did|why didn't|why didnt) (?:you|u)\b/,
+		/\b(?:do|did) we (?:really )?need\b/,
+		/\b(?:are|r) (?:you|u) sure\b/,
+		/\b(?:not what i asked|i didn't ask|i didnt ask)\b/,
+		/\b(?:let's|lets|we should) (?:defer|skip|stop)\b/,
+		/\bi (?:just |keep )?(?:corrected|correct) (?:u|you)\b/,
+		/\bshould(?:'ve| have) been (?:a )?correction\b/,
+	].some((pattern) => pattern.test(text));
+}
+
+export function fallbackCorrectionInterpretation(entries: SessionEntry[], userFeedback: string): CorrectionInterpretation {
+	const source = inferCorrectionSource(entries);
+	const assistant = entries.find((entry) => entry.id === source.assistantEntryId);
+	const decision = messageText(assistant?.message?.content);
+	return {
+		category: "unclassified correction signal",
+		agentDecision: decision || "Previous assistant response",
+		userFeedback,
+		expectedBehavior: "Review this feedback to determine how the previous response should have differed.",
+		strength: "weak",
+	};
+}
 
 export function correctionsFile(agentDir: string): string {
 	return join(agentDir, "corrections", "events.jsonl");
@@ -306,7 +343,7 @@ export function parseGroupingOutput(output: string, candidates: CorrectionCandid
 			const action = ["add", "change", "remove"].includes(String(interventionRecord.action))
 				? interventionRecord.action as "add" | "change" | "remove"
 				: undefined;
-			const owner = ["code_or_test", "agents", "cxstack", "skill", "memory", "papercut"].includes(String(interventionRecord.owner))
+			const owner = ["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory", "papercut"].includes(String(interventionRecord.owner))
 				? interventionRecord.owner as CorrectionOwner
 				: undefined;
 			const scope = interventionRecord.scope === "project" || interventionRecord.scope === "global" ? interventionRecord.scope : undefined;

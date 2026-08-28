@@ -54,7 +54,7 @@ function harness(
 	const entries = [
 		{ type: "custom", id: "cx", customType: CX_STATE_ENTRY, data: { active: true } },
 		{ type: "message", id: "request", message: { role: "user", content: "What should we do next?" } },
-		{ type: "message", id: "answer", message: { role: "assistant", content: [] } },
+		{ type: "message", id: "answer", message: { role: "assistant", content: [{ type: "text", text: "Use a sanitizer." }] } },
 		{ type: "message", id: "correction", message: { role: "user", content: "That is unnecessary." } },
 		{ type: "message", id: "logging", message: { role: "assistant", content: [] } },
 	];
@@ -110,6 +110,32 @@ function capture(h: ReturnType<typeof harness>) {
 		},
 	}, h.context);
 }
+
+test("records a visible weak fallback when the model omits a marker", async () => {
+	const h = harness();
+	const prompt = "I don't think so. You're confused about what the wiki is for.";
+	const before = h.handlers.get("before_agent_start")?.({ prompt, systemPrompt: "base" }, h.context);
+	expect(before.systemPrompt).toContain("broad correction signals");
+	const toolUse = h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Checking." }] },
+	}, h.context);
+	expect(toolUse).toBeUndefined();
+	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
+
+	const result = h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "You're right." }] },
+	}, h.context);
+	expect(result).toBeUndefined();
+	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates;
+	expect(recorded).toHaveLength(1);
+	expect(recorded[0]).toMatchObject({
+		category: "unclassified correction signal",
+		agentDecision: "Use a sanitizer.",
+		userFeedback: prompt,
+		strength: "weak",
+	});
+	expect(h.notifications.some((message) => message.startsWith("Possible correction recorded"))).toBeTrue();
+});
 
 test("capture returns before background grouping finishes", async () => {
 	let resolveGrouping!: (patterns: CorrectionPattern[]) => void;

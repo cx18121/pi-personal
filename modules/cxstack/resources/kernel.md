@@ -52,7 +52,7 @@ When Todo exists, reconcile it before waiting or finishing: none pending when fi
 
 Feature, Diagnose, Performance, Refactor, and Prototype also use the shared [change spine](references/playbooks/build-and-change.md).
 
-Read, explain, investigate, recommend, and discuss requests do not permit implementation. Mutate only after explicit intent. If implementation exposes a material architecture, scope, rollout, or maintenance fork, return to Investigation and Decision.
+If implementation exposes a material architecture, scope, rollout, or maintenance fork, return to Investigation and Decision.
 
 For routed work, state the route, intended result, and completion condition. Current evidence and explicit decisions win.
 

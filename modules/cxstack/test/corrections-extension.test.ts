@@ -92,7 +92,7 @@ function harness(
 		},
 	} as unknown as ExtensionContext;
 	registerCorrections(pi, { agentDir, group });
-	return { agentDir, handlers, tools, commands, notifications, userMessages, widgets, context };
+	return { agentDir, entries, handlers, tools, commands, notifications, userMessages, widgets, context };
 }
 
 async function execute(tool: ToolDefinition, params: Record<string, unknown>, context: ExtensionContext) {
@@ -103,6 +103,7 @@ function capture(h: ReturnType<typeof harness>) {
 	return h.handlers.get("message_end")?.({
 		message: {
 			role: "assistant",
+			stopReason: "stop",
 			content: [{
 				type: "text",
 				text: `You're right.\n<cx-correction>{"category":"prioritization","agentDecision":"Proposed a sanitizer without a current failure","userFeedback":"That is unnecessary","expectedBehavior":"Compare against doing nothing","strength":"strong"}</cx-correction>`,
@@ -111,15 +112,15 @@ function capture(h: ReturnType<typeof harness>) {
 	}, h.context);
 }
 
-test("records a visible weak fallback when the model omits a marker", async () => {
+test("records a visible protocol gap only after a successful final response", async () => {
 	const h = harness();
-	const prompt = "I don't think so. You're confused about what the wiki is for.";
-	const before = h.handlers.get("before_agent_start")?.({ prompt, systemPrompt: "base" }, h.context);
-	expect(before.systemPrompt).toContain("broad correction signals");
-	const toolUse = h.handlers.get("message_end")?.({
-		message: { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Checking." }] },
-	}, h.context);
-	expect(toolUse).toBeUndefined();
+	const before = h.handlers.get("before_agent_start")?.({ prompt: "That is unnecessary.", systemPrompt: "base" }, h.context);
+	expect(before.systemPrompt).toContain('{"kind":"none"}');
+	for (const stopReason of ["toolUse", "length", "error", "aborted"]) {
+		h.handlers.get("message_end")?.({
+			message: { role: "assistant", stopReason, content: [{ type: "text", text: "Checking." }] },
+		}, h.context);
+	}
 	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
 
 	const result = h.handlers.get("message_end")?.({
@@ -129,12 +130,55 @@ test("records a visible weak fallback when the model omits a marker", async () =
 	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates;
 	expect(recorded).toHaveLength(1);
 	expect(recorded[0]).toMatchObject({
-		category: "unclassified correction signal",
+		category: "missing correction classification",
 		agentDecision: "Use a sanitizer.",
-		userFeedback: prompt,
+		userFeedback: "That is unnecessary.",
 		strength: "weak",
 	});
-	expect(h.notifications.some((message) => message.startsWith("Possible correction recorded"))).toBeTrue();
+	expect(h.notifications.some((message) => message.startsWith("Correction classification missing"))).toBeTrue();
+});
+
+test("keeps a correction classification through a failed response retry", () => {
+	const h = harness();
+	h.handlers.get("before_agent_start")?.({ prompt: "That is unnecessary.", systemPrompt: "base" }, h.context);
+	const marker = `Retrying.\n<cx-correction>{"category":"prioritization","agentDecision":"Proposed a sanitizer without a current failure","userFeedback":"That is unnecessary","expectedBehavior":"Compare against doing nothing","strength":"strong"}</cx-correction>`;
+	const failed = h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "error", content: [{ type: "text", text: marker }] },
+	}, h.context);
+	expect(failed?.message.content[0].text).toBe("Retrying.");
+	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
+
+	h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Completed." }] },
+	}, h.context);
+	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toHaveLength(1);
+	expect(h.notifications.some((message) => message.startsWith("Correction recorded"))).toBeTrue();
+});
+
+test("binds an intermediate correction marker before later steering arrives", () => {
+	const h = harness();
+	h.handlers.get("before_agent_start")?.({ prompt: "That is unnecessary.", systemPrompt: "base" }, h.context);
+	const marker = `Checking.\n<cx-correction>{"category":"prioritization","agentDecision":"Proposed a sanitizer without a current failure","userFeedback":"That is unnecessary","expectedBehavior":"Compare against doing nothing","strength":"strong"}</cx-correction>`;
+	h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: marker }] },
+	}, h.context);
+	h.entries.push({ type: "message", id: "later-steering", message: { role: "user", content: "One more thing." } });
+	h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Completed." }] },
+	}, h.context);
+	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates;
+	expect(recorded).toHaveLength(1);
+	expect(recorded[0]?.source.correctionEntryId).toBe("correction");
+});
+
+test("accepts an explicit no-correction classification", () => {
+	const h = harness();
+	h.handlers.get("before_agent_start")?.({ prompt: "Continue.", systemPrompt: "base" }, h.context);
+	const result = h.handlers.get("message_end")?.({
+		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: 'Done.\n<cx-correction>{"kind":"none"}</cx-correction>' }] },
+	}, h.context);
+	expect(result?.message.content[0].text).toBe("Done.");
+	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
 });
 
 test("capture returns before background grouping finishes", async () => {

@@ -25,7 +25,7 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-test("captures markers and correction signals without another model turn", async () => {
+test("captures corrections and missing classifications without another model turn", async () => {
 	const root = await mkdtemp(join(tmpdir(), "corrections-live-"));
 	roots.push(root);
 	const cwd = join(root, "repo");
@@ -37,13 +37,19 @@ test("captures markers and correction signals without another model turn", async
 	const modelId = "correction-driver";
 	const faux = createFauxCore({ provider: providerId, models: [{ id: modelId }] });
 	faux.setResponses([
-		fauxAssistantMessage("Build a transcript sanitizer."),
+		fauxAssistantMessage([
+			fauxText("Build a transcript sanitizer."),
+			fauxText('<cx-correction>{"kind":"none"}</cx-correction>'),
+		]),
 		fauxAssistantMessage([
 			fauxText("You're right. There is no current failure, so we should defer it."),
 			fauxText(`<cx-correction>{"category":"prioritization","agentDecision":"Proposed a transcript sanitizer without a current failure","userFeedback":"The sanitizer is unnecessary","expectedBehavior":"Compare against doing nothing before proposing machinery","strength":"strong"}</cx-correction>`),
 		]),
 		fauxAssistantMessage("Agreed. I will keep it in project memory."),
-		fauxAssistantMessage("Continued without replay errors."),
+		fauxAssistantMessage([
+			fauxText("Continued without replay errors."),
+			fauxText('<cx-correction>{"kind":"none"}</cx-correction>'),
+		]),
 	]);
 	const runtime = await ModelRuntime.create({
 		authPath: join(agentDir, "auth.json"),
@@ -112,7 +118,7 @@ test("captures markers and correction signals without another model turn", async
 			correctionEntryId: expect.any(String),
 		});
 		expect(state.candidates[1]).toMatchObject({
-			category: "unclassified correction signal",
+			category: "missing correction classification",
 			strength: "weak",
 			userFeedback: "I don't think that technical note belongs in the wiki.",
 			source: {

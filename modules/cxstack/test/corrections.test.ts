@@ -8,10 +8,9 @@ import {
 	correctionsFile,
 	createCorrectionCandidate,
 	extractCorrectionMarker,
-	fallbackCorrectionInterpretation,
 	inferCorrectionSource,
-	looksLikeCorrection,
 	parseGroupingOutput,
+	protocolGapInterpretation,
 	readCorrectionEvents,
 } from "../lib/corrections.ts";
 
@@ -57,6 +56,7 @@ describe("correction storage", () => {
 	test("extracts and hides model-authored correction markers", () => {
 		const extracted = extractCorrectionMarker(`You're right.\n<cx-correction>{"category":"scope","agentDecision":"Expanded the task","userFeedback":"Keep it narrow","expectedBehavior":"Preserve the requested scope","strength":"strong"}</cx-correction>`);
 		expect(extracted.content).toBe("You're right.");
+		expect(extracted.classification).toBe("correction");
 		expect(extracted.interpretation).toEqual({
 			category: "scope",
 			agentDecision: "Expanded the task",
@@ -65,6 +65,10 @@ describe("correction storage", () => {
 			strength: "strong",
 		});
 		expect(extractCorrectionMarker("ordinary answer")).toEqual({ content: "ordinary answer" });
+		expect(extractCorrectionMarker('Done.\n<cx-correction>{"kind":"none"}</cx-correction>')).toEqual({
+			content: "Done.",
+			classification: "none",
+		});
 	});
 
 	test("infers exact request, answer, and correction provenance", () => {
@@ -80,19 +84,15 @@ describe("correction storage", () => {
 		})).toThrow("is not a user message");
 	});
 
-	test("flags broad correction signals and creates a weak fallback", () => {
-		expect(looksLikeCorrection("I don't think so. You're confused about what the wiki is for.")).toBe(true);
-		expect(looksLikeCorrection("Are you sure we need this machinery?")).toBe(true);
-		expect(looksLikeCorrection("I feel like I just corrected u, but nothing surfaced.")).toBe(true);
-		expect(looksLikeCorrection("That should've been a correction.")).toBe(true);
-		expect(looksLikeCorrection("Please add another unit test.")).toBe(false);
+	test("creates a weak candidate from a missing classification", () => {
 		const entries = sourceEntries();
 		entries[1]!.message.content = [{ type: "text", text: "Moved the technical notes to the wiki." }];
-		expect(fallbackCorrectionInterpretation(entries, "I don't think those belong in the wiki.")).toEqual({
-			category: "unclassified correction signal",
+		entries[2]!.message.content = "I don't think those belong in the wiki.";
+		expect(protocolGapInterpretation(entries)).toEqual({
+			category: "missing correction classification",
 			agentDecision: "Moved the technical notes to the wiki.",
 			userFeedback: "I don't think those belong in the wiki.",
-			expectedBehavior: "Review this feedback to determine how the previous response should have differed.",
+			expectedBehavior: "Review this turn because its required correction classification was missing.",
 			strength: "weak",
 		});
 	});

@@ -6,6 +6,8 @@ export type CorrectionStrength = "weak" | "strong";
 export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
 export type CorrectionProofKind = "existing_test" | "new_mechanical_eval" | "new_live_eval" | "direct_observation" | "no_additional_proof";
 
+export type CorrectionClassification = "correction" | "none";
+
 export type CorrectionInterpretation = {
 	category: string;
 	agentDecision: string;
@@ -97,31 +99,17 @@ const messageText = (content: unknown) => {
 		.join("\n");
 };
 
-export function looksLikeCorrection(input: string): boolean {
-	const text = input.replace(/\s+/g, " ").toLowerCase();
-	return [
-		/\b(i|we) (?:do not|don't|dont) think\b/,
-		/\b(?:you are|you're|ur|u are) (?:wrong|confused|missing|overthinking)\b/,
-		/\b(?:that|this) (?:is|seems|feels) (?:wrong|unnecessary|overkill|too much|confusing)\b/,
-		/\b(?:why did|why didn't|why didnt) (?:you|u)\b/,
-		/\b(?:do|did) we (?:really )?need\b/,
-		/\b(?:are|r) (?:you|u) sure\b/,
-		/\b(?:not what i asked|i didn't ask|i didnt ask)\b/,
-		/\b(?:let's|lets|we should) (?:defer|skip|stop)\b/,
-		/\bi (?:just |keep )?(?:corrected|correct) (?:u|you)\b/,
-		/\bshould(?:'ve| have) been (?:a )?correction\b/,
-	].some((pattern) => pattern.test(text));
-}
-
-export function fallbackCorrectionInterpretation(entries: SessionEntry[], userFeedback: string): CorrectionInterpretation {
+export function protocolGapInterpretation(entries: SessionEntry[]): CorrectionInterpretation {
 	const source = inferCorrectionSource(entries);
 	const assistant = entries.find((entry) => entry.id === source.assistantEntryId);
+	const correction = entries.find((entry) => entry.id === source.correctionEntryId);
 	const decision = messageText(assistant?.message?.content);
+	const userFeedback = messageText(correction?.message?.content);
 	return {
-		category: "unclassified correction signal",
+		category: "missing correction classification",
 		agentDecision: decision || "Previous assistant response",
-		userFeedback,
-		expectedBehavior: "Review this feedback to determine how the previous response should have differed.",
+		userFeedback: userFeedback || "Latest user message",
+		expectedBehavior: "Review this turn because its required correction classification was missing.",
 		strength: "weak",
 	};
 }
@@ -227,7 +215,7 @@ export function inferCorrectionSource(entries: SessionEntry[], explicit?: Correc
 	};
 }
 
-export function extractCorrectionMarker(content: string): { content: string; interpretation?: CorrectionInterpretation } {
+export function extractCorrectionMarker(content: string): { content: string; classification?: CorrectionClassification; interpretation?: CorrectionInterpretation } {
 	const startToken = "<cx-correction>";
 	const endToken = "</cx-correction>";
 	const start = content.lastIndexOf(startToken);
@@ -242,6 +230,7 @@ export function extractCorrectionMarker(content: string): { content: string; int
 	}
 	if (!value || typeof value !== "object" || Array.isArray(value)) return { content: cleaned };
 	const record = value as Record<string, unknown>;
+	if (record.kind === "none") return { content: cleaned, classification: "none" };
 	const category = text(record.category);
 	const agentDecision = text(record.agentDecision);
 	const userFeedback = text(record.userFeedback);
@@ -250,6 +239,7 @@ export function extractCorrectionMarker(content: string): { content: string; int
 	if (!category || !agentDecision || !userFeedback || !expectedBehavior || !strength) return { content: cleaned };
 	return {
 		content: cleaned,
+		classification: "correction",
 		interpretation: { category, agentDecision, userFeedback, expectedBehavior, strength },
 	};
 }

@@ -66,7 +66,7 @@ Reflect works whether CX is active or not.
 
 ## Correction loop
 
-In an active CX session, the model classifies every successful final response as either a correction or no correction. It appends a structured marker to the answer. The correction extension removes the marker before display. For corrections, it stores the interpretation with exact session entry references and shows an undoable notification. If the required classification is missing, the extension records a visible weak candidate for later review. Failed, aborted, tool, and truncated responses do not create that candidate. Capture adds no tool call or model turn. `correction_log` exists only for approved Reflect backfills.
+In an active CX session, the model appends a structured marker when it identifies a correction. The correction extension removes the marker before display, stores the interpretation with exact session entry references, and shows an undoable notification. Ordinary responses need no marker and create no warning. Capture adds no tool call or model turn. `correction_log` exists only for approved Reflect backfills.
 
 Correction candidates live in a private local event log outside normal prompt context. Grouping runs asynchronously against correction records only. A ready proposal must name a proof plan and earn any new eval it adds. It assigns an optional intervention to exactly one owner. The owners are code or tests, AGENTS.md, project documentation, CXStack, a skill, memory, or papercuts. Ready patterns appear at a later natural handoff and remain reviewable through `/corrections`. Accepting one proposal authorizes that exact local action and focused verification. Failed proof rejects the intervention. Commit, push, publication, and deployment remain separate.
 

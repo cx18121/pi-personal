@@ -6,8 +6,6 @@ export type CorrectionStrength = "weak" | "strong";
 export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
 export type CorrectionProofKind = "existing_test" | "new_mechanical_eval" | "new_live_eval" | "direct_observation" | "no_additional_proof";
 
-export type CorrectionClassification = "correction" | "none";
-
 export type CorrectionInterpretation = {
 	category: string;
 	agentDecision: string;
@@ -82,7 +80,7 @@ export type CorrectionState = {
 type SessionEntry = {
 	id?: unknown;
 	type?: unknown;
-	message?: { role?: unknown; content?: unknown };
+	message?: { role?: unknown };
 };
 
 const bounded = (value: string, max = 600) => value.replace(/\s+/g, " ").trim().slice(0, max);
@@ -90,30 +88,6 @@ const text = (value: unknown) => typeof value === "string" ? value : undefined;
 const stringArray = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === "string")
 	? value
 	: undefined;
-const messageText = (content: unknown) => {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter((part): part is { type: "text"; text: string } => Boolean(part) && typeof part === "object" && part.type === "text" && typeof part.text === "string")
-		.map(({ text }) => text)
-		.join("\n");
-};
-
-export function protocolGapInterpretation(entries: SessionEntry[]): CorrectionInterpretation {
-	const source = inferCorrectionSource(entries);
-	const assistant = entries.find((entry) => entry.id === source.assistantEntryId);
-	const correction = entries.find((entry) => entry.id === source.correctionEntryId);
-	const decision = messageText(assistant?.message?.content);
-	const userFeedback = messageText(correction?.message?.content);
-	return {
-		category: "missing correction classification",
-		agentDecision: decision || "Previous assistant response",
-		userFeedback: userFeedback || "Latest user message",
-		expectedBehavior: "Review this turn because its required correction classification was missing.",
-		strength: "weak",
-	};
-}
-
 export function correctionsFile(agentDir: string): string {
 	return join(agentDir, "corrections", "events.jsonl");
 }
@@ -215,7 +189,7 @@ export function inferCorrectionSource(entries: SessionEntry[], explicit?: Correc
 	};
 }
 
-export function extractCorrectionMarker(content: string): { content: string; classification?: CorrectionClassification; interpretation?: CorrectionInterpretation } {
+export function extractCorrectionMarker(content: string): { content: string; interpretation?: CorrectionInterpretation } {
 	const startToken = "<cx-correction>";
 	const endToken = "</cx-correction>";
 	const start = content.lastIndexOf(startToken);
@@ -230,7 +204,6 @@ export function extractCorrectionMarker(content: string): { content: string; cla
 	}
 	if (!value || typeof value !== "object" || Array.isArray(value)) return { content: cleaned };
 	const record = value as Record<string, unknown>;
-	if (record.kind === "none") return { content: cleaned, classification: "none" };
 	const category = text(record.category);
 	const agentDecision = text(record.agentDecision);
 	const userFeedback = text(record.userFeedback);
@@ -239,7 +212,6 @@ export function extractCorrectionMarker(content: string): { content: string; cla
 	if (!category || !agentDecision || !userFeedback || !expectedBehavior || !strength) return { content: cleaned };
 	return {
 		content: cleaned,
-		classification: "correction",
 		interpretation: { category, agentDecision, userFeedback, expectedBehavior, strength },
 	};
 }

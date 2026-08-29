@@ -112,30 +112,17 @@ function capture(h: ReturnType<typeof harness>) {
 	}, h.context);
 }
 
-test("records a visible protocol gap only after a successful final response", async () => {
+test("does not classify ordinary responses or stop reasons", () => {
 	const h = harness();
-	const before = h.handlers.get("before_agent_start")?.({ prompt: "That is unnecessary.", systemPrompt: "base" }, h.context);
-	expect(before.systemPrompt).toContain('{"kind":"none"}');
-	for (const stopReason of ["toolUse", "length", "error", "aborted"]) {
+	const before = h.handlers.get("before_agent_start")?.({ prompt: "Continue.", systemPrompt: "base" }, h.context);
+	expect(before.systemPrompt).not.toContain('{"kind":"none"}');
+	for (const stopReason of ["toolUse", "length", "error", "aborted", "stop"]) {
 		h.handlers.get("message_end")?.({
 			message: { role: "assistant", stopReason, content: [{ type: "text", text: "Checking." }] },
 		}, h.context);
 	}
 	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
-
-	const result = h.handlers.get("message_end")?.({
-		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "You're right." }] },
-	}, h.context);
-	expect(result).toBeUndefined();
-	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates;
-	expect(recorded).toHaveLength(1);
-	expect(recorded[0]).toMatchObject({
-		category: "missing correction classification",
-		agentDecision: "Use a sanitizer.",
-		userFeedback: "That is unnecessary.",
-		strength: "weak",
-	});
-	expect(h.notifications.some((message) => message.startsWith("Correction classification missing"))).toBeTrue();
+	expect(h.notifications).toEqual([]);
 });
 
 test("keeps a correction classification through a failed response retry", () => {
@@ -169,16 +156,6 @@ test("binds an intermediate correction marker before later steering arrives", ()
 	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates;
 	expect(recorded).toHaveLength(1);
 	expect(recorded[0]?.source.correctionEntryId).toBe("correction");
-});
-
-test("accepts an explicit no-correction classification", () => {
-	const h = harness();
-	h.handlers.get("before_agent_start")?.({ prompt: "Continue.", systemPrompt: "base" }, h.context);
-	const result = h.handlers.get("message_end")?.({
-		message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: 'Done.\n<cx-correction>{"kind":"none"}</cx-correction>' }] },
-	}, h.context);
-	expect(result?.message.content[0].text).toBe("Done.");
-	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates).toEqual([]);
 });
 
 test("capture returns before background grouping finishes", async () => {

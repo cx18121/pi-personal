@@ -17,7 +17,6 @@ import {
 	extractCorrectionMarker,
 	groupingInput,
 	inferCorrectionSource,
-	protocolGapInterpretation,
 	parseGroupingOutput,
 	readCorrectionEvents,
 	type CorrectionCandidate,
@@ -33,11 +32,9 @@ const kernel = renderCxKernel(
 	resourceRoot,
 );
 const kernelVersion = cxContentVersion(kernel);
-const captureInstructions = `Correction capture is evidence, not a durable rule. End every successful final response with exactly one hidden classification marker. When Charlie's current feedback may mean your previous judgment, action, priority, scope, or explanation should have differed, use:
+const captureInstructions = `Correction capture is evidence, not a durable rule. When Charlie's current feedback may mean your previous judgment, action, priority, scope, or explanation should have differed, answer normally and append this hidden marker at the end:
 <cx-correction>{"category":"...","agentDecision":"...","userFeedback":"...","expectedBehavior":"...","strength":"weak|strong"}</cx-correction>
-Otherwise use:
-<cx-correction>{"kind":"none"}</cx-correction>
-Do not mention the marker. Do not classify ordinary new information or a scope change requested before your response as a correction.`;
+Do not mention the marker. Do not append a marker for ordinary new information or a scope change requested before your response.`;
 const groupingInstructions = readFileSync(join(resourceRoot, "correction-grouping.md"), "utf8").trim();
 
 type CorrectionsDependencies = {
@@ -92,7 +89,6 @@ export default function registerCorrections(
 	const group = dependencies.group ?? defaultGroup;
 	let grouping: Promise<void> | undefined;
 	let groupAgain = false;
-	let classifiedCurrentRun = false;
 	let currentCorrection: { interpretation: CorrectionInterpretation; source: CorrectionSource } | undefined;
 	let groupingController: AbortController | undefined;
 
@@ -170,7 +166,6 @@ export default function registerCorrections(
 
 	pi.on("before_agent_start", (event, ctx) => {
 		if (!restoreCxState(ctx.sessionManager.getEntries()).active) return undefined;
-		classifiedCurrentRun = false;
 		currentCorrection = undefined;
 		return { systemPrompt: `${event.systemPrompt}\n\n${captureInstructions}` };
 	});
@@ -179,7 +174,6 @@ export default function registerCorrections(
 		if (event.message.role !== "assistant") return undefined;
 		if (!restoreCxState(ctx.sessionManager.getEntries()).active) return undefined;
 		let interpretation: CorrectionInterpretation | undefined;
-		let classified = false;
 		let changed = false;
 		const content: typeof event.message.content = [];
 		for (const part of event.message.content) {
@@ -189,7 +183,6 @@ export default function registerCorrections(
 			}
 			const extracted = extractCorrectionMarker(part.text);
 			if (extracted.content !== part.text) changed = true;
-			if (extracted.classification) classified = true;
 			if (extracted.interpretation) interpretation = extracted.interpretation;
 			if (extracted.content === part.text) content.push(part);
 			else if (extracted.content) content.push({ ...part, text: extracted.content });
@@ -197,7 +190,6 @@ export default function registerCorrections(
 		const safeContent = content.some((part) => part.type === "text" || part.type === "toolCall")
 			? content
 			: [...content, { type: "text" as const, text: "I completed the response." }];
-		if (classified) classifiedCurrentRun = true;
 		if (interpretation) {
 			try {
 				currentCorrection = {
@@ -210,9 +202,7 @@ export default function registerCorrections(
 		}
 
 		if (event.message.stopReason === "stop") {
-			const completedClassification = classifiedCurrentRun;
 			const completedCorrection = currentCorrection;
-			classifiedCurrentRun = false;
 			currentCorrection = undefined;
 			if (completedCorrection) {
 				try {
@@ -222,15 +212,7 @@ export default function registerCorrections(
 					if (ctx.hasUI) ctx.ui.notify(`Correction capture failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 				}
 			}
-			if (!completedClassification) {
-				try {
-					const candidate = recordCandidate(protocolGapInterpretation(ctx.sessionManager.getBranch()), ctx);
-					if (ctx.hasUI) ctx.ui.notify(`Correction classification missing · recorded for review. Undo: /corrections undo ${candidate.id}`, "warning");
-				} catch (error) {
-					if (ctx.hasUI) ctx.ui.notify(`Correction classification missing · ${error instanceof Error ? error.message : String(error)}`, "warning");
-				}
-			}
-		} else if (changed && !classified && ctx.hasUI) {
+		} else if (changed && !interpretation && ctx.hasUI) {
 			ctx.ui.notify("Ignored an invalid correction marker.", "warning");
 		}
 		return changed ? { message: { ...event.message, content: safeContent } } : undefined;

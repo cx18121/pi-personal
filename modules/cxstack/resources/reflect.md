@@ -14,7 +14,7 @@ If a useful lesson cannot be reviewed without private evidence, keep the review 
 
 ## Independent review
 
-Use one fresh read-only reviewer from the complementary model family when `child_run` is available. Choose the complementary model from Model roles and pass only the bounded digest in the self-contained task. The child session is fresh and in memory, so its prompt may contain only the sanitized digest. If independent review is unavailable, continue in the parent and state that limit.
+Use one fresh read-only reviewer from the complementary model family when `spawn_agent` is available. Choose the complementary model from Model roles and pass only the bounded digest in the self-contained message. The child session is fresh, so its message may contain only the sanitized digest. If independent review is unavailable, continue in the parent and state that limit.
 
 Ask the reviewer to find:
 

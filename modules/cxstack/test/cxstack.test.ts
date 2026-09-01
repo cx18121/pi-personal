@@ -338,9 +338,9 @@ describe("CX package resources", () => {
 		expect(references.every((reference) => existsSync(reference))).toBe(true);
 	});
 
-	test("routes Reflect through the bounded child interface", () => {
+	test("routes Reflect through Codex Subagents", () => {
 		const reflect = readFileSync(join(moduleRoot, "resources/reflect.md"), "utf8");
-		expect(reflect).toContain("when `child_run` is available");
+		expect(reflect).toContain("when `spawn_agent` is available");
 		expect(reflect).toContain("complementary model from Model roles");
 		expect(reflect).not.toContain("pi --list-models");
 		expect(reflect).not.toContain("context: \"fresh\"");

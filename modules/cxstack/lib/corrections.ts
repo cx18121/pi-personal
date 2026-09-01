@@ -72,6 +72,8 @@ export type CorrectionEvent =
 export type CorrectionState = {
 	candidates: CorrectionCandidate[];
 	patterns: CorrectionPattern[];
+	allCandidates: CorrectionCandidate[];
+	allPatterns: CorrectionPattern[];
 	decisions: Map<string, "accepted" | "rejected" | "deferred">;
 	outcomes: Map<string, "applied" | "rejected_by_proof">;
 	surfaced: Set<string>;
@@ -143,9 +145,8 @@ export function correctionState(events: CorrectionEvent[]): CorrectionState {
 			)
 			.flatMap(([patternId]) => patternsById.get(patternId)?.candidateIds ?? []),
 	);
-	const activeCandidates = [...candidates.values()].filter(
-		(candidate) => !undone.has(candidate.id) && !settledCandidates.has(candidate.id),
-	);
+	const allCandidates = [...candidates.values()].filter((candidate) => !undone.has(candidate.id));
+	const activeCandidates = allCandidates.filter((candidate) => !settledCandidates.has(candidate.id));
 	const activeIds = new Set(activeCandidates.map(({ id }) => id));
 	return {
 		candidates: activeCandidates,
@@ -155,6 +156,8 @@ export function correctionState(events: CorrectionEvent[]): CorrectionState {
 			const reviewable = !decision || decision === "deferred" || reconsider;
 			return reviewable && pattern.candidateIds.every((id) => activeIds.has(id));
 		}),
+		allCandidates,
+		allPatterns: [...patternsById.values()],
 		decisions,
 		outcomes,
 		surfaced,

@@ -12,7 +12,8 @@ from pathlib import Path
 
 module_root = Path(__file__).resolve().parent.parent
 package_root = module_root.parent.parent
-child_agent = package_root / 'modules/child-agent/extensions/child-agent.ts'
+agent_dir = Path(os.environ.get('PI_CODING_AGENT_DIR', str(Path.home() / '.pi/agent')))
+codex_subagents = agent_dir / 'npm/node_modules/@ogulcancelik/pi-codex-subagents/index.ts'
 session_dir = Path(tempfile.mkdtemp(prefix='cxstack-privacy-sessions-', dir='/tmp'))
 log_path = Path('/tmp/cxstack-reflect-privacy.stderr.log')
 report_path = Path('/tmp/cxstack-reflect-privacy-report.json')
@@ -73,7 +74,7 @@ global_context_before = digest(global_context_path.read_bytes()) if global_conte
 env = os.environ.copy()
 args = [
     'pi', '--mode', 'rpc', '--no-extensions',
-    '-e', str(module_root), '-e', str(child_agent),
+    '-e', str(module_root), '-e', str(codex_subagents),
     '--provider', 'openai-codex', '--model', 'gpt-5.6-sol',
     '--session-dir', str(session_dir),
 ]
@@ -142,8 +143,8 @@ with log_path.open('w') as stderr:
     wait_for(lambda row: row.get('id') == 'reflect' and row.get('type') == 'response')
     wait_for(lambda row: row.get('type') == 'agent_settled', timeout=1200)
     reflect_rows = rows[reflect_start:]
-    if not any('child-agent-result' in json.dumps(row) for row in reflect_rows):
-        wait_for(lambda row: 'child-agent-result' in json.dumps(row), timeout=1200)
+    if not any('pi-codex-subagent-completion' in json.dumps(row) for row in reflect_rows):
+        wait_for(lambda row: 'pi-codex-subagent-completion' in json.dumps(row), timeout=1200)
     if rows[-1].get('type') != 'agent_settled':
         wait_for(lambda row: row.get('type') == 'agent_settled', timeout=1200)
 
@@ -162,8 +163,8 @@ reflect_index = next(
     if row.get('type') == 'message' and 'Reflect on this session.' in json.dumps(row)
 )
 calls = tool_calls(parent_rows, reflect_index)
-child_runs = [arguments for name, arguments in calls if name == 'child_run']
-child_tasks = [arguments.get('task', '') for arguments in child_runs]
+child_runs = [arguments for name, arguments in calls if name == 'spawn_agent']
+child_tasks = [arguments.get('message', '') for arguments in child_runs]
 child_models = [arguments.get('model') for arguments in child_runs]
 mutation_tools = {'memory_write', 'papercut', 'write', 'edit', 'mcp'}
 parent_text = parent.read_text()
@@ -185,7 +186,11 @@ allowed_reads = all(
 
 assert sentinel in parent_text
 assert child_runs
-assert all(model in {'fable', 'opus', 'openai'} for model in child_models)
+assert all(model in {
+    'anthropic/claude-fable-5',
+    'anthropic/claude-opus-5',
+    'openai-codex/gpt-5.6-sol',
+} for model in child_models)
 assert sentinel not in json.dumps(child_tasks)
 assert 'agent-browser' in json.dumps(child_tasks)
 assert not any(name in mutation_tools for name, _arguments in calls)

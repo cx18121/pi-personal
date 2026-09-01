@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+import type { CorrectionReviewTheme } from "../components/corrections-review.ts";
 import registerCorrections from "../extensions/corrections.ts";
 import {
 	correctionState,
@@ -51,6 +53,9 @@ function harness(
 	const notifications: string[] = [];
 	const userMessages: string[] = [];
 	const widgets: unknown[] = [];
+	const customComponents: Component[] = [];
+	const customOptions: Array<{ overlay?: boolean } | undefined> = [];
+	const confirmations: string[] = [];
 	const entries = [
 		{ type: "custom", id: "cx", customType: CX_STATE_ENTRY, data: { active: true } },
 		{ type: "message", id: "request", message: { role: "user", content: "What should we do next?" } },
@@ -75,6 +80,7 @@ function harness(
 	const context = {
 		cwd: "/workspace",
 		hasUI: true,
+		mode: "tui",
 		modelRegistry: {} as never,
 		scopedModels: [],
 		sessionManager: {
@@ -89,10 +95,50 @@ function harness(
 			setWidget(_key: string, value: unknown) {
 				widgets.push(value);
 			},
+			confirm(title: string, message: string) {
+				confirmations.push(`${title}\n${message}`);
+				return Promise.resolve(true);
+			},
+			custom<Result>(
+				factory: (
+					tui: { requestRender(): void },
+					theme: CorrectionReviewTheme,
+					keybindings: { matches(data: string, binding: string): boolean },
+					done: (result: Result) => void,
+				) => Component,
+				options?: { overlay?: boolean },
+			) {
+				customOptions.push(options);
+				return new Promise<Result>((resolve) => {
+					customComponents.push(factory(
+						{ requestRender() {} },
+						{
+							fg: (_color: string, text: string) => text,
+							bg: (_color: string, text: string) => text,
+							bold: (text: string) => text,
+						},
+						{ matches: () => false },
+						resolve,
+					));
+				});
+			},
 		},
 	} as unknown as ExtensionContext;
 	registerCorrections(pi, { agentDir, group });
-	return { agentDir, entries, handlers, tools, commands, notifications, userMessages, widgets, context };
+	return {
+		agentDir,
+		entries,
+		handlers,
+		tools,
+		commands,
+		notifications,
+		userMessages,
+		widgets,
+		customComponents,
+		customOptions,
+		confirmations,
+		context,
+	};
 }
 
 async function execute(tool: ToolDefinition, params: Record<string, unknown>, context: ExtensionContext) {
@@ -189,7 +235,7 @@ test("aborted grouping retries from the durable queue on next startup", async ()
 	capture(first);
 	capture(first);
 	await settle();
-	first.handlers.get("session_shutdown")?.();
+	first.handlers.get("session_shutdown")?.({}, first.context);
 	await settle();
 	expect(groupCalls).toBe(1);
 	expect(correctionState(readCorrectionEvents(correctionsFile(agentDir))).patterns).toEqual([]);
@@ -242,6 +288,61 @@ test("deferred proposals remain reviewable and can be accepted later", async () 
 	expect(correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).patterns[0]?.id).toBe(patternId);
 	await h.commands.get("corrections")?.(`accept ${patternId}`, h.context);
 	expect(h.userMessages[0]).toContain("Implement the accepted correction proposal");
+});
+
+test("opens a dismissible temporary correction review without leaving a widget", async () => {
+	const h = harness();
+	capture(h);
+	await settle();
+	const command = h.commands.get("corrections");
+	expect(command).toBeDefined();
+	if (!command) return;
+
+	const review = command("", h.context);
+	await settle();
+	const component = h.customComponents[0];
+	expect(component).toBeDefined();
+	expect(h.customOptions[0]).toBeUndefined();
+	expect(h.widgets.at(-1)).toBeUndefined();
+	expect(component?.render(120).join("\n")).toContain("Unnecessary machinery");
+	component?.handleInput?.("q");
+	await review;
+	expect(h.userMessages).toEqual([]);
+});
+
+test("accepts a selected correction after confirmation", async () => {
+	const h = harness();
+	capture(h);
+	await settle();
+	const command = h.commands.get("corrections");
+	expect(command).toBeDefined();
+	if (!command) return;
+
+	const review = command("", h.context);
+	await settle();
+	h.customComponents[0]?.handleInput?.("a");
+	await review;
+	expect(h.confirmations[0]).toContain("Accept correction?");
+	expect(h.userMessages[0]).toContain("Implement the accepted correction proposal");
+});
+
+test("starts a discussion without deciding or applying the correction", async () => {
+	const h = harness();
+	capture(h);
+	await settle();
+	const command = h.commands.get("corrections");
+	expect(command).toBeDefined();
+	if (!command) return;
+
+	const review = command("", h.context);
+	await settle();
+	h.customComponents[0]?.handleInput?.("c");
+	await review;
+	const state = correctionState(readCorrectionEvents(correctionsFile(h.agentDir)));
+	expect(state.decisions.size).toBe(0);
+	expect(h.userMessages[0]).toContain("This is discussion only");
+	expect(h.userMessages[0]).toContain("Unnecessary machinery");
+	expect(h.userMessages[0]).toContain("That is unnecessary");
 });
 
 test("accepted proposals authorize the exact local action without delivery", async () => {

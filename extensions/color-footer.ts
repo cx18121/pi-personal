@@ -136,7 +136,6 @@ export default function (pi: ExtensionAPI) {
 					const statuses = footerData.getExtensionStatuses();
 					const cxMode = statuses.get("cx-mode");
 					const fastMode = statuses.get("fast-mode");
-					const childAgent = statuses.get("child-agent");
 					const context = ctx.getContextUsage();
 					const contextPercent = context?.percent;
 					const roundedContext = contextPercent === null || contextPercent === undefined
@@ -155,7 +154,7 @@ export default function (pi: ExtensionAPI) {
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
 					const status = [
-						[model, thinking, cxMode, fastMode, childAgent].filter(Boolean).join(" "),
+						[model, thinking, cxMode, fastMode].filter(Boolean).join(" "),
 						`${contextBar} ${contextLabel}`,
 						worktreeDiff,
 					].filter(Boolean).join(separator);

@@ -2,7 +2,7 @@
 
 Run only when invoked by Review step 5 after accepted maintainability changes, before final behavior checks or delivery.
 
-Launch one fresh background child with `child_run` using the complementary choice from Model roles. The child is read only because the delegated task says so.
+Launch one fresh background child with `spawn_agent` using the complementary choice from Model roles. The child is read only because the delegated task says so.
 
 Give it:
 
@@ -18,6 +18,6 @@ Ask it to try to falsify correctness. It should trace concrete execution paths, 
 
 A finding requires a concrete broken outcome, violated invariant, or missing proof with exact source evidence. Style, speculative hardening, and unrelated improvements are not findings. The child does not edit files.
 
-This review is a barrier. Do not run final behavior checks, enter Delivery, or claim completion until the child result arrives and is resolved. Continue only independent read-only inspection while it runs, or return control and let the result wake the session. Do not poll `child_status` for ordinary completion. A failed child leaves correctness review unresolved.
+This review is a barrier. Do not run final behavior checks, enter Delivery, or claim completion until the child result arrives and is resolved. Continue only independent read-only inspection while it runs, or return control and let the result wake the session. Do not poll `list_agents` for ordinary completion. A failed child leaves correctness review unresolved.
 
 The parent verifies every finding and records it as accepted, rejected, or unresolved. Any accepted fix leaves Review and enters the appropriate change route, then starts Review again on the changed artifact. Run another correctness review only when a material fix changed reviewed behavior or new evidence can settle an important claim. An unchanged unresolved claim is reported, not reviewed in a loop.

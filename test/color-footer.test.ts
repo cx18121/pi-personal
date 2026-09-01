@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import colorFooter from "../extensions/color-footer.ts";
 
-test("renders background child status from extension statuses", async () => {
+test("renders active extension modes", async () => {
 	const handlers = new Map<string, (...args: any[]) => any>();
 	let footerFactory: ((tui: any, theme: any, data: any) => any) | undefined;
 	const pi = {
@@ -41,7 +41,6 @@ test("renders background child status from extension statuses", async () => {
 			getGitBranch: () => "main",
 			getExtensionStatuses: () => new Map([
 				["cx-mode", "CX"],
-				["child-agent", "child 1 · 3m 43s"],
 			]),
 			onBranchChange: () => () => {},
 		},
@@ -49,5 +48,4 @@ test("renders background child status from extension statuses", async () => {
 	const output = footer?.render(200).join("\n") ?? "";
 
 	expect(output).toContain("CX");
-	expect(output).toContain("child 1 · 3m 43s");
 });

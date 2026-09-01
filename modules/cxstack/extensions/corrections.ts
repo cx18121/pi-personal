@@ -1,14 +1,25 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import {
+	type Api,
+	type Message,
+	type Model,
+	StringEnum,
+	Type,
+} from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai/compat";
 import {
 	getAgentDir,
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { runChildSession } from "../../child-agent/lib/session.js";
+import {
+	buildCorrectionReviewGroups,
+	CorrectionReviewComponent,
+	type CorrectionReviewAction,
+} from "../components/corrections-review.js";
 import {
 	appendCorrectionEvent,
 	correctionState,
@@ -44,9 +55,16 @@ type CorrectionsDependencies = {
 
 const now = () => new Date().toISOString();
 const sorted = (values: string[]) => [...values].sort();
-const patternTarget = (pattern: CorrectionPattern) => pattern.intervention
-	? `${pattern.intervention.scope} ${pattern.intervention.owner}`
-	: pattern.eval ? "eval only" : pattern.proof.kind;
+const discussionPrompt = (pattern: CorrectionPattern, candidates: CorrectionCandidate[]) => `Discuss the correction proposal below with me. This is discussion only. Do not accept, reject, defer, implement, edit files, or write durable memory unless I explicitly decide later.
+
+Pattern ID: ${pattern.id}
+Pattern: ${pattern.title}
+Summary: ${pattern.summary}
+Evidence:
+${candidates.map((candidate) => `- Agent decision: ${candidate.agentDecision}\n  Feedback: ${candidate.userFeedback}\n  Expected behavior: ${candidate.expectedBehavior}`).join("\n")}
+Proof: ${pattern.proof.kind} — ${pattern.proof.reason}
+${pattern.eval ? `Evaluation:\n${JSON.stringify(pattern.eval, null, 2)}\n` : ""}${pattern.intervention ? `Intervention:\n${JSON.stringify(pattern.intervention, null, 2)}\n` : ""}
+Explain the proposal in plain terms, answer my questions, and identify any tradeoffs or reasons not to apply it.`;
 const acceptedPrompt = (pattern: CorrectionPattern) => `Implement the accepted correction proposal below. This is authorization for the exact local change and focused verification, but not commit, push, publication, or deployment.
 
 Pattern ID: ${pattern.id}
@@ -57,11 +75,14 @@ ${pattern.eval ? `Eval:\n${JSON.stringify(pattern.eval, null, 2)}\n` : ""}${patt
 If the proof does not improve its target behavior or a relevant regression appears, revert the candidate intervention and call correction_outcome with outcome rejected_by_proof. Otherwise call correction_outcome with outcome applied and concise evidence.`;
 const sameValues = (left: string[], right: string[]) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
 
-function fableModel(ctx: ExtensionContext): string {
+function fableModel(ctx: ExtensionContext): Model<Api> {
 	const matches = ctx.scopedModels.map(({ model }) => model)
 		.filter(({ provider, id }) => provider === "anthropic" && id.includes("fable"));
-	if (matches.length !== 1) throw new Error(`Correction grouping requires one scoped Fable model; found ${matches.length}.`);
-	return `${matches[0]!.provider}/${matches[0]!.id}`;
+	const model = matches[0];
+	if (matches.length !== 1 || !model) {
+		throw new Error(`Correction grouping requires one scoped Fable model; found ${matches.length}.`);
+	}
+	return model;
 }
 
 async function defaultGroup(
@@ -69,16 +90,29 @@ async function defaultGroup(
 	ctx: ExtensionContext,
 	signal: AbortSignal,
 ): Promise<CorrectionPattern[]> {
-	const result = await runChildSession({
-		task: `${groupingInstructions}\n\nCandidates:\n${groupingInput(candidates)}`,
-		model: fableModel(ctx),
-		cwd: ctx.cwd,
-		agentDir: getAgentDir(),
-		parentRegistry: ctx.modelRegistry,
-		signal,
-		tools: [],
-	});
-	return parseGroupingOutput(result.output, candidates);
+	const model = fableModel(ctx);
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok) throw new Error(`Correction grouping could not authenticate Fable: ${auth.error}`);
+	const message: Message = {
+		role: "user",
+		content: [{ type: "text", text: `Candidates:\n${groupingInput(candidates)}` }],
+		timestamp: Date.now(),
+	};
+	const response = await complete(
+		model,
+		{ systemPrompt: groupingInstructions, messages: [message] },
+		{ apiKey: auth.apiKey, headers: auth.headers, signal },
+	);
+	if (response.stopReason === "aborted") throw new Error("Correction grouping was cancelled.");
+	if (response.stopReason === "error") {
+		throw new Error(response.errorMessage ?? "Correction grouping failed without provider details.");
+	}
+	const output = response.content
+		.flatMap((part) => part.type === "text" ? [part.text] : [])
+		.join("\n")
+		.trim();
+	if (!output) throw new Error("Correction grouping returned no text.");
+	return parseGroupingOutput(output, candidates);
 }
 
 export default function registerCorrections(
@@ -219,12 +253,14 @@ export default function registerCorrections(
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		ctx.ui.setWidget("corrections-review", undefined);
 		if (!restoreCxState(ctx.sessionManager.getEntries()).active) return;
 		scheduleGrouping(ctx);
 	});
 
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", (_event, ctx) => {
 		groupingController?.abort();
+		ctx.ui.setWidget("corrections-review", undefined);
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
@@ -302,10 +338,80 @@ export default function registerCorrections(
 		},
 	});
 
+	const decide = (
+		patternId: string,
+		decision: "accepted" | "rejected" | "deferred",
+		pattern: CorrectionPattern,
+		ctx: ExtensionContext,
+	) => {
+		appendCorrectionEvent(filePath, {
+			type: "proposal_decided",
+			at: now(),
+			patternId,
+			decision,
+		});
+		if (decision === "accepted") {
+			pi.sendUserMessage(acceptedPrompt(pattern));
+			return;
+		}
+		ctx.ui.notify(`${decision === "rejected" ? "Rejected" : "Deferred"} ${pattern.title}.`, "info");
+	};
+
+	const showReview = async (ctx: ExtensionContext) => {
+		if (ctx.mode !== "tui") {
+			ctx.ui.notify("Correction review requires interactive Pi. Use /corrections accept, reject, or defer with a pattern id.", "warning");
+			return;
+		}
+		while (true) {
+			const state = activeState();
+			const action = await ctx.ui.custom<CorrectionReviewAction | undefined>(
+				(tui, theme, keybindings, done) => new CorrectionReviewComponent(
+					buildCorrectionReviewGroups(state),
+					theme,
+					() => tui.requestRender(),
+					(data, binding) => keybindings.matches(data, binding),
+					done,
+					() => done(undefined),
+				),
+			);
+			if (!action) return;
+			const current = activeState();
+			const pattern = current.allPatterns.find(({ id }) => id === action.patternId);
+			if (!pattern) {
+				ctx.ui.notify(`Unknown correction pattern: ${action.patternId}`, "warning");
+				continue;
+			}
+			if (action.type === "discuss") {
+				const evidence = current.allCandidates.filter(({ id }) => pattern.candidateIds.includes(id));
+				pi.sendUserMessage(discussionPrompt(pattern, evidence));
+				return;
+			}
+			if (action.decision === "accepted") {
+				const confirmed = await ctx.ui.confirm(
+					"Accept correction?",
+					`${pattern.title}\n\n${pattern.intervention?.exactChange ?? pattern.eval?.expectedBehavior ?? pattern.proof.reason}\n\nThis starts the approved implementation flow.`,
+				);
+				if (!confirmed) continue;
+				decide(action.patternId, action.decision, pattern, ctx);
+				return;
+			}
+			if (action.decision === "rejected") {
+				const confirmed = await ctx.ui.confirm(
+					"Reject correction?",
+					`${pattern.title}\n\nThis dismisses the proposal and settles its correction evidence.`,
+				);
+				if (!confirmed) continue;
+			}
+			decide(action.patternId, action.decision, pattern, ctx);
+		}
+	};
+
 	pi.registerCommand("corrections", {
 		description: "Review, undo, accept, reject, or defer correction evidence",
 		handler: async (args, ctx) => {
+			ctx.ui.setWidget("corrections-review", undefined);
 			const [action, id] = args.trim().split(/\s+/, 2);
+			if (action === "close") return;
 			if (action === "undo" && id) {
 				appendCorrectionEvent(filePath, { type: "candidate_undone", at: now(), candidateId: id });
 				scheduleGrouping(ctx);
@@ -321,22 +427,11 @@ export default function registerCorrections(
 					return;
 				}
 				const decision = action === "accept" ? "accepted" : action === "reject" ? "rejected" : "deferred";
-				appendCorrectionEvent(filePath, { type: "proposal_decided", at: now(), patternId: id, decision });
-				if (decision === "accepted") {
-					pi.sendUserMessage(acceptedPrompt(pattern));
-					return;
-				}
-				ctx.ui.notify(`${decision === "rejected" ? "Rejected" : "Deferred"} ${pattern.title}.`, "info");
+				decide(id, decision, pattern, ctx);
 				return;
 			}
 
-			const ready = state.patterns.filter(({ disposition }) => disposition === "ready");
-			const lines = [
-				`${state.candidates.length} active correction candidate${state.candidates.length === 1 ? "" : "s"}.`,
-				...ready.slice(0, 5).map((pattern) => `${pattern.id} · ${pattern.title} → ${patternTarget(pattern)}\n${pattern.intervention?.exactChange ?? pattern.eval?.expectedBehavior ?? pattern.proof.reason}`),
-				ready.length === 0 ? "No improvement proposal is ready." : "Use /corrections accept|reject|defer <pattern-id>.",
-			];
-			ctx.ui.setWidget("corrections-review", lines, { placement: "aboveEditor" });
+			await showReview(ctx);
 		},
 	});
 }

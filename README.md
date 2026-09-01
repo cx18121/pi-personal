@@ -6,8 +6,8 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 
 ## Layout
 
-- `modules/child-agent/` contains the focused background child runtime.
 - `modules/cxstack/` contains the complete CXStack feature.
+- `archives/pi-child-agent/` contains the frozen, directly installable custom child package that Codex Subagents replaced.
 - `extensions/`, `lib/`, `scripts/`, and `test/` contain standalone personal extensions and their support files.
 - `vendor/` contains bundled local forks.
 
@@ -18,7 +18,6 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/clear-command.ts`](extensions/clear-command.ts) adds `/clear` for starting a session with no conversation context. It also hides `/new` from command completion.
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, active modes, context use, and diff size.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
-- [`modules/child-agent/extensions/child-agent.ts`](modules/child-agent/extensions/child-agent.ts) runs fresh child agents in the background for the current Pi session. It exposes launch, status, and stop tools and returns each result to the owning session.
 - [`modules/cxstack/extensions/cx.ts`](modules/cxstack/extensions/cx.ts) adds sticky `/cx` task ownership. It stores one session-wide boolean, injects a compact kernel only when needed, survives tree navigation and compaction, and uses `/cx off` for deterministic deactivation.
 - [`modules/cxstack/extensions/audit.ts`](modules/cxstack/extensions/audit.ts) adds `/cx-audit` for evidence-based review of recent CX sessions without ratings or dashboards.
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
@@ -39,8 +38,6 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 
 ## Support files
 
-- [`modules/child-agent/lib/jobs.ts`](modules/child-agent/lib/jobs.ts) owns current-session child lifecycle and bounded result state.
-- [`modules/child-agent/lib/session.ts`](modules/child-agent/lib/session.ts) creates the fixed read-only Pi child session and transfers provider authentication.
 - [`modules/cxstack/lib/cx.ts`](modules/cxstack/lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
 - [`modules/cxstack/lib/audit.ts`](modules/cxstack/lib/audit.ts) finds recent CX sessions and extracts only version and reference markers for the audit manifest.
 - [`modules/cxstack/lib/corrections.ts`](modules/cxstack/lib/corrections.ts) stores correction evidence, exact session provenance, grouping snapshots, and proposal decisions.
@@ -49,7 +46,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.
 - [`scripts/apple-reminders.js`](scripts/apple-reminders.js) uses macOS automation to read and change Apple Reminders.
 - [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts), [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs), and the correction tests cover CX command, routing, session, correction, packaging, and handler behavior.
-- [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check through `child_run` with synthetic data. It is manual because it makes real model calls.
+- [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check through `spawn_agent` with synthetic data. It is manual because it makes real model calls.
 - [`test/time-reminders.test.ts`](test/time-reminders.test.ts) tests the shared time and reminder behavior.
 
 ## Origins
@@ -62,7 +59,7 @@ Most of this package was written for my own setup. These parts have a direct ups
 - [`extensions/effort.ts`](extensions/effort.ts) is a new implementation inspired by [`pi-effort`](https://github.com/ricardofrantz/pi-effort), updated for the current Pi model and thinking APIs.
 - [`extensions/inline-skills.ts`](extensions/inline-skills.ts) is a customized copy of Tifan Dwi Avianto's [`@tifan/pi-inline-skills`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-inline-skills).
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) grew from the side-channel workflow in [`pi-btw`](https://github.com/dbachelder/pi-btw). The tool-free drawer and external `/side` session are custom implementations.
-- [`modules/child-agent`](modules/child-agent/) adapts current Pi session setup from [`pi-crew`](https://github.com/melihmucuk/pi-crew) and the in-memory job model from [`pi-fast-subagent`](https://github.com/tuansondinh/pi-fast-subagent). Both sources are MIT licensed.
+- [`archives/pi-child-agent`](archives/pi-child-agent/) preserves the replaced child runtime and its upstream notices as a frozen Pi package.
 - [`vendor/pi-memory`](vendor/pi-memory/README.md) is a local Markdown-only fork of Jay Zeng's [`pi-memory`](https://github.com/jayzeng/pi-memory).
 - [`vendor/pi-paster`](vendor/pi-paster/README.md) is a bundled and customized copy of [`pi-paster`](https://github.com/beowulf11/pi-paster).
 

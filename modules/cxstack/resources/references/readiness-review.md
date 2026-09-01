@@ -2,7 +2,7 @@
 
 Use when the consequence gate is met and an implementation direction needs approval.
 
-Launch one fresh background child with `child_run` using the complementary choice from Model roles. The child is read only because the delegated task says so.
+Launch one fresh background child with `spawn_agent` using the complementary choice from Model roles. The child is read only because the delegated task says so.
 
 Give the child primary evidence, not a persuasive author summary:
 
@@ -26,6 +26,6 @@ Ask it to find:
 
 It reports only concrete gaps with evidence. It does not edit files or decide product direction.
 
-This review is a barrier. Do not present the implementation contract or start mutation until the child result arrives and is resolved. Continue only independent read-only investigation while it runs, or return control and let the result wake the session. Do not poll `child_status` for ordinary completion. A failed child leaves readiness blocked.
+This review is a barrier. Do not present the implementation contract or start mutation until the child result arrives and is resolved. Continue only independent read-only investigation while it runs, or return control and let the result wake the session. Do not poll `list_agents` for ordinary completion. A failed child leaves readiness blocked.
 
 Resolve missing facts and ordinary engineering concerns before involving Charlie. Re-run one fresh readiness review only when a material revision changed the decision. Bring Charlie only the remaining judgment forks, then present the settled implementation contract and stop before code.

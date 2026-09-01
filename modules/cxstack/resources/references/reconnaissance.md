@@ -2,7 +2,7 @@
 
 Use a child when repository exploration would consume substantial main-session context or when an independent source map improves a later decision.
 
-Launch one fresh child with `child_run`. Choose `openai` for fast exact repository reading, or the complementary choice from Model roles when an independent family perspective matters. Give it a bounded question, exact working directory, named source roots or symbols, known evidence, and the output needed by the parent.
+Launch one fresh child with `spawn_agent`. Choose the available OpenAI model for fast exact repository reading, or the complementary choice from Model roles when an independent family perspective matters. Give it a bounded question, exact working directory, named source roots or symbols, known evidence, and the output needed by the parent.
 
 Ask for:
 

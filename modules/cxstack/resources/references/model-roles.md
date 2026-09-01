@@ -11,8 +11,10 @@ Use child models only for bounded contributions that earn their cost. These are 
 
 Let the task override these defaults when another model is a better fit. Do not build a classifier or route by keywords.
 
-`child_run` exposes only `fable`, `opus`, and `openai`. For an independent challenge from an OpenAI parent, choose `fable` by default and `opus` only when the task needs its stronger judgment. From a Claude parent, choose `openai`. A provider authentication or quota failure blocks the child result; report it instead of routing through another provider.
+`spawn_agent` offers the exact models allowed by the current Pi configuration. For an independent challenge from an OpenAI parent, choose the available Claude Fable model by default and choose Opus only when the task needs its stronger judgment. From a Claude parent, choose the available OpenAI model. A provider authentication or quota failure blocks the child result. Report it instead of routing through another provider.
 
-Give each child a self-contained task, current primary evidence, exact source paths, authority boundary, success condition, and output contract. Independent reviews use fresh context by construction. One child is enough unless separate questions genuinely need separate contexts.
+Give each child a short `task_name` and a self-contained `message` with current primary evidence, exact source paths, authority boundary, success condition, and output contract. Children do not load project context files automatically, so include every relevant project rule in the message. Independent reviews use fresh context by construction. One child is enough unless separate questions genuinely need separate contexts.
+
+Continue independent work after spawning. Let the completion return automatically. Use `wait_agent` only when the next action depends on the result and no useful work remains. Use `send_message` to steer a running child or ask it to return its best current findings.
 
 The main agent owns synthesis, decisions, and every project mutation. Child prompts define their authority. Review, investigation, and judgment tasks are read only unless explicitly authorized otherwise. Children gain no publication, merge, deployment, destructive, or product authority.

@@ -54,7 +54,7 @@ export default createMcpAdapter({
 	config: {
 		mcpServers: {
 			linear: {
-				url: "https://mcp.linear.app/mcp/readonly",
+				url: "https://mcp.linear.app/mcp",
 				auth: "oauth",
 				lifecycle: "lazy",
 				directTools: false,

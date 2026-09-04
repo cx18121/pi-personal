@@ -2,9 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+export const CORRECTION_GROUPING_VERSION = 2;
+
 export type CorrectionStrength = "weak" | "strong";
 export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
 export type CorrectionProofKind = "existing_test" | "new_mechanical_eval" | "new_live_eval" | "direct_observation" | "no_additional_proof";
+export type CorrectionDecision = "accepted" | "rejected" | "deferred" | "already_fixed" | "duplicate";
+export type CorrectionOutcome = "applied" | "verified" | "rejected_by_proof";
 
 export type CorrectionInterpretation = {
 	category: string;
@@ -34,48 +38,61 @@ export type CorrectionCandidate = {
 	createdAt: string;
 };
 
+export type CorrectionEval = {
+	input: string;
+	expectedBehavior: string;
+	forbiddenBehavior: string[];
+	rubric: string[];
+	models: Array<"openai" | "fable">;
+};
+
+export type CorrectionIntervention = {
+	action: "add" | "change" | "remove";
+	owner: CorrectionOwner;
+	scope: "project" | "global";
+	targetProject?: string;
+	exactChange: string;
+	whyThisOwner: string;
+};
+
+export type CorrectionProposal = {
+	proof: {
+		kind: CorrectionProofKind;
+		reason: string;
+	};
+	eval?: CorrectionEval;
+	intervention?: CorrectionIntervention;
+};
+
 export type CorrectionPattern = {
 	id: string;
 	title: string;
 	summary: string;
 	candidateIds: string[];
 	disposition: "one_off" | "hold" | "ready";
-	proof: {
-		kind: CorrectionProofKind;
-		reason: string;
-	};
-	eval?: {
-		input: string;
-		expectedBehavior: string;
-		forbiddenBehavior: string[];
-		rubric: string[];
-		models: Array<"openai" | "fable">;
-	};
-	intervention?: {
-		action: "add" | "change" | "remove";
-		owner: CorrectionOwner;
-		scope: "project" | "global";
-		exactChange: string;
-		whyThisOwner: string;
-	};
+	proof?: CorrectionProposal["proof"];
+	eval?: CorrectionEval;
+	intervention?: CorrectionIntervention;
 	reason: string;
 };
 
 export type CorrectionEvent =
 	| { type: "candidate_recorded"; at: string; candidate: CorrectionCandidate }
 	| { type: "candidate_undone"; at: string; candidateId: string }
-	| { type: "grouping_snapshot"; at: string; candidateIds: string[]; patterns: CorrectionPattern[] }
-	| { type: "proposal_surfaced"; at: string; patternId: string }
-	| { type: "proposal_decided"; at: string; patternId: string; decision: "accepted" | "rejected" | "deferred" }
-	| { type: "proposal_outcome"; at: string; patternId: string; outcome: "applied" | "rejected_by_proof"; evidence: string };
+	| { type: "grouping_snapshot"; at: string; version?: number; candidateIds: string[]; patterns: CorrectionPattern[] }
+	| { type: "proposal_surfaced"; at: string; patternId: string; pattern?: CorrectionPattern }
+	| { type: "proposal_authored"; at: string; patternId: string; proposal: CorrectionProposal }
+	| { type: "proposal_decided"; at: string; patternId: string; decision: CorrectionDecision }
+	| { type: "proposal_outcome"; at: string; patternId: string; outcome: CorrectionOutcome; evidence: string };
 
 export type CorrectionState = {
 	candidates: CorrectionCandidate[];
+	groupingCandidates: CorrectionCandidate[];
 	patterns: CorrectionPattern[];
 	allCandidates: CorrectionCandidate[];
 	allPatterns: CorrectionPattern[];
-	decisions: Map<string, "accepted" | "rejected" | "deferred">;
-	outcomes: Map<string, "applied" | "rejected_by_proof">;
+	decisions: Map<string, CorrectionDecision>;
+	outcomes: Map<string, CorrectionOutcome>;
 	surfaced: Set<string>;
 };
 
@@ -120,9 +137,11 @@ export function readCorrectionEvents(filePath: string): CorrectionEvent[] {
 export function correctionState(events: CorrectionEvent[]): CorrectionState {
 	const candidates = new Map<string, CorrectionCandidate>();
 	const undone = new Set<string>();
-	const decisions = new Map<string, "accepted" | "rejected" | "deferred">();
-	const outcomes = new Map<string, "applied" | "rejected_by_proof">();
+	const decisions = new Map<string, CorrectionDecision>();
+	const outcomes = new Map<string, CorrectionOutcome>();
 	const surfaced = new Set<string>();
+	const surfacedPatterns = new Map<string, CorrectionPattern>();
+	const proposals = new Map<string, CorrectionProposal>();
 	const patternsById = new Map<string, CorrectionPattern>();
 	let patterns: CorrectionPattern[] = [];
 
@@ -130,34 +149,58 @@ export function correctionState(events: CorrectionEvent[]): CorrectionState {
 		if (event.type === "candidate_recorded") candidates.set(event.candidate.id, event.candidate);
 		if (event.type === "candidate_undone") undone.add(event.candidateId);
 		if (event.type === "grouping_snapshot") {
-			patterns = event.patterns;
+			if (event.version === CORRECTION_GROUPING_VERSION) patterns = event.patterns;
 			for (const pattern of event.patterns) patternsById.set(pattern.id, pattern);
 		}
-		if (event.type === "proposal_surfaced") surfaced.add(event.patternId);
+		if (event.type === "proposal_surfaced" && event.pattern) {
+			surfaced.add(event.patternId);
+			surfacedPatterns.set(event.patternId, event.pattern);
+			patternsById.set(event.patternId, event.pattern);
+		}
+		if (event.type === "proposal_authored") proposals.set(event.patternId, event.proposal);
 		if (event.type === "proposal_decided") decisions.set(event.patternId, event.decision);
 		if (event.type === "proposal_outcome") outcomes.set(event.patternId, event.outcome);
 	}
 
+	const proposed = (pattern: CorrectionPattern): CorrectionPattern => {
+		const proposal = proposals.get(pattern.id);
+		return proposal ? { ...pattern, ...proposal } : pattern;
+	};
+	const terminal = (patternId: string): boolean => {
+		const decision = decisions.get(patternId);
+		if (decision === "rejected" || decision === "already_fixed" || decision === "duplicate") return true;
+		return decision === "accepted" && ["applied", "verified"].includes(outcomes.get(patternId) ?? "");
+	};
 	const settledCandidates = new Set(
 		[...decisions]
-			.filter(([patternId, decision]) =>
-				decision === "rejected" || (decision === "accepted" && outcomes.get(patternId) !== "rejected_by_proof"),
-			)
+			.filter(([patternId]) => terminal(patternId))
 			.flatMap(([patternId]) => patternsById.get(patternId)?.candidateIds ?? []),
 	);
 	const allCandidates = [...candidates.values()].filter((candidate) => !undone.has(candidate.id));
 	const activeCandidates = allCandidates.filter((candidate) => !settledCandidates.has(candidate.id));
 	const activeIds = new Set(activeCandidates.map(({ id }) => id));
+	const frozenPatterns = [...surfacedPatterns.values()]
+		.filter((pattern) => !terminal(pattern.id) && outcomes.get(pattern.id) !== "rejected_by_proof")
+		.filter((pattern) => pattern.candidateIds.every((id) => activeIds.has(id)))
+		.map(proposed);
+	const reservedIds = new Set(frozenPatterns.flatMap(({ candidateIds }) => candidateIds));
+	const groupingCandidates = activeCandidates.filter(({ id }) => !reservedIds.has(id));
+	const groupingIds = new Set(groupingCandidates.map(({ id }) => id));
+	const dynamicPatterns = patterns
+		.filter((pattern) => !terminal(pattern.id))
+		.filter((pattern) => pattern.candidateIds.every((id) => groupingIds.has(id)))
+		.map(proposed);
+	const activePatterns = new Map<string, CorrectionPattern>();
+	for (const pattern of [...frozenPatterns, ...dynamicPatterns]) activePatterns.set(pattern.id, pattern);
+	const allPatterns = new Map<string, CorrectionPattern>();
+	for (const pattern of patternsById.values()) allPatterns.set(pattern.id, proposed(pattern));
+
 	return {
 		candidates: activeCandidates,
-		patterns: patterns.filter((pattern) => {
-			const decision = decisions.get(pattern.id);
-			const reconsider = decision === "accepted" && outcomes.get(pattern.id) === "rejected_by_proof";
-			const reviewable = !decision || decision === "deferred" || reconsider;
-			return reviewable && pattern.candidateIds.every((id) => activeIds.has(id));
-		}),
+		groupingCandidates,
+		patterns: [...activePatterns.values()],
 		allCandidates,
-		allPatterns: [...patternsById.values()],
+		allPatterns: [...allPatterns.values()],
 		decisions,
 		outcomes,
 		surfaced,
@@ -258,6 +301,82 @@ export function groupingInput(candidates: CorrectionCandidate[]): string {
 	})), null, 2);
 }
 
+export function freezeCorrectionPattern(pattern: CorrectionPattern): CorrectionPattern {
+	const { proof: _proof, eval: _eval, intervention: _intervention, ...cluster } = pattern;
+	return { ...cluster, id: `proposal-${randomUUID().slice(0, 8)}` };
+}
+
+export function parseCorrectionProposal(value: unknown): CorrectionProposal {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid correction proposal.");
+	const record = value as Record<string, unknown>;
+	const proofRecord = record.proof && typeof record.proof === "object" && !Array.isArray(record.proof)
+		? record.proof as Record<string, unknown>
+		: undefined;
+	const proofKind = ["existing_test", "new_mechanical_eval", "new_live_eval", "direct_observation", "no_additional_proof"].includes(String(proofRecord?.kind))
+		? proofRecord?.kind as CorrectionProofKind
+		: undefined;
+	const proofReason = text(proofRecord?.reason);
+	if (!proofKind || !proofReason) throw new Error("Incomplete correction proposal proof.");
+
+	let evalCase: CorrectionEval | undefined;
+	if (record.eval !== undefined) {
+		if (!record.eval || typeof record.eval !== "object" || Array.isArray(record.eval)) throw new Error("Invalid correction eval.");
+		const evalRecord = record.eval as Record<string, unknown>;
+		const input = text(evalRecord.input);
+		const expectedBehavior = text(evalRecord.expectedBehavior);
+		const forbiddenBehavior = stringArray(evalRecord.forbiddenBehavior);
+		const rubric = stringArray(evalRecord.rubric);
+		const models = stringArray(evalRecord.models)?.filter((model): model is "openai" | "fable" => model === "openai" || model === "fable");
+		if (!input || !expectedBehavior || !forbiddenBehavior || !rubric || !models?.length) throw new Error("Incomplete correction eval.");
+		evalCase = {
+			input: bounded(input),
+			expectedBehavior: bounded(expectedBehavior),
+			forbiddenBehavior,
+			rubric,
+			models: [...new Set(models)],
+		};
+	}
+
+	let intervention: CorrectionIntervention | undefined;
+	if (record.intervention !== undefined) {
+		if (!record.intervention || typeof record.intervention !== "object" || Array.isArray(record.intervention)) throw new Error("Invalid correction intervention.");
+		const interventionRecord = record.intervention as Record<string, unknown>;
+		const action = ["add", "change", "remove"].includes(String(interventionRecord.action))
+			? interventionRecord.action as CorrectionIntervention["action"]
+			: undefined;
+		const owner = ["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory", "papercut"].includes(String(interventionRecord.owner))
+			? interventionRecord.owner as CorrectionOwner
+			: undefined;
+		const scope = interventionRecord.scope === "project" || interventionRecord.scope === "global" ? interventionRecord.scope : undefined;
+		const targetProject = text(interventionRecord.targetProject);
+		const exactChange = text(interventionRecord.exactChange);
+		const whyThisOwner = text(interventionRecord.whyThisOwner);
+		if (!action || !owner || !scope || !exactChange || !whyThisOwner) throw new Error("Incomplete correction intervention.");
+		if (scope === "project" && !targetProject) throw new Error("Project correction interventions require targetProject.");
+		if (scope === "global" && targetProject) throw new Error("Global correction interventions cannot set targetProject.");
+		intervention = {
+			action,
+			owner,
+			scope,
+			...(targetProject ? { targetProject: bounded(targetProject, 1000) } : {}),
+			exactChange: bounded(exactChange, 1000),
+			whyThisOwner: bounded(whyThisOwner),
+		};
+	}
+
+	const needsEval = proofKind === "new_mechanical_eval" || proofKind === "new_live_eval";
+	if (needsEval !== Boolean(evalCase)) throw new Error("Correction proposal has an inconsistent eval proof.");
+	if (evalCase && (!evalCase.models.includes("openai") || !evalCase.models.includes("fable"))) {
+		throw new Error("Correction eval must cover OpenAI and Fable.");
+	}
+	if (!evalCase && !intervention) throw new Error("Correction proposal has no action.");
+	return {
+		proof: { kind: proofKind, reason: bounded(proofReason) },
+		...(evalCase ? { eval: evalCase } : {}),
+		...(intervention ? { intervention } : {}),
+	};
+}
+
 export function parseGroupingOutput(output: string, candidates: CorrectionCandidate[]): CorrectionPattern[] {
 	const start = output.indexOf("[");
 	const end = output.lastIndexOf("]");
@@ -275,76 +394,25 @@ export function parseGroupingOutput(output: string, candidates: CorrectionCandid
 		const disposition = ["one_off", "hold", "ready"].includes(String(record.disposition))
 			? record.disposition as CorrectionPattern["disposition"]
 			: undefined;
-		const proofRecord = record.proof && typeof record.proof === "object" && !Array.isArray(record.proof)
-			? record.proof as Record<string, unknown>
-			: undefined;
-		const proofKind = ["existing_test", "new_mechanical_eval", "new_live_eval", "direct_observation", "no_additional_proof"].includes(String(proofRecord?.kind))
-			? proofRecord?.kind as CorrectionProofKind
-			: undefined;
-		const proofReason = text(proofRecord?.reason);
-		if (!title || !summary || !evidence?.length || !disposition || !proofKind || !proofReason || !reason) {
+		if (!title || !summary || !evidence?.length || !disposition || !reason) {
 			throw new Error(`Incomplete correction pattern ${index + 1}.`);
 		}
 		if (evidence.some((id) => !candidateIds.has(id))) throw new Error(`Correction pattern ${index + 1} references unknown evidence.`);
 		const uniqueEvidence = [...new Set(evidence)].sort();
-
-		let evalCase: CorrectionPattern["eval"];
-		if (record.eval !== undefined) {
-			if (!record.eval || typeof record.eval !== "object" || Array.isArray(record.eval)) throw new Error(`Invalid correction eval ${index + 1}.`);
-			const evalRecord = record.eval as Record<string, unknown>;
-			const input = text(evalRecord.input);
-			const expectedBehavior = text(evalRecord.expectedBehavior);
-			const forbiddenBehavior = stringArray(evalRecord.forbiddenBehavior);
-			const rubric = stringArray(evalRecord.rubric);
-			const models = stringArray(evalRecord.models)?.filter((model): model is "openai" | "fable" => model === "openai" || model === "fable");
-			if (!input || !expectedBehavior || !forbiddenBehavior || !rubric || !models?.length) throw new Error(`Incomplete correction eval ${index + 1}.`);
-			evalCase = { input: bounded(input), expectedBehavior: bounded(expectedBehavior), forbiddenBehavior, rubric, models: [...new Set(models)] };
-		}
-
-		let intervention: CorrectionPattern["intervention"];
-		if (record.intervention !== undefined) {
-			if (!record.intervention || typeof record.intervention !== "object" || Array.isArray(record.intervention)) throw new Error(`Invalid correction intervention ${index + 1}.`);
-			const interventionRecord = record.intervention as Record<string, unknown>;
-			const action = ["add", "change", "remove"].includes(String(interventionRecord.action))
-				? interventionRecord.action as "add" | "change" | "remove"
-				: undefined;
-			const owner = ["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory", "papercut"].includes(String(interventionRecord.owner))
-				? interventionRecord.owner as CorrectionOwner
-				: undefined;
-			const scope = interventionRecord.scope === "project" || interventionRecord.scope === "global" ? interventionRecord.scope : undefined;
-			const exactChange = text(interventionRecord.exactChange);
-			const whyThisOwner = text(interventionRecord.whyThisOwner);
-			if (!action || !owner || !scope || !exactChange || !whyThisOwner) throw new Error(`Incomplete correction intervention ${index + 1}.`);
-			intervention = { action, owner, scope, exactChange: bounded(exactChange, 1000), whyThisOwner: bounded(whyThisOwner) };
-		}
-
-		const needsEval = proofKind === "new_mechanical_eval" || proofKind === "new_live_eval";
-		if (needsEval !== Boolean(evalCase)) throw new Error(`Correction pattern ${index + 1} has an inconsistent eval proof.`);
-		if (evalCase && (!evalCase.models.includes("openai") || !evalCase.models.includes("fable"))) {
-			throw new Error(`Correction eval ${index + 1} must cover OpenAI and Fable.`);
-		}
-		if (disposition === "ready" && !evalCase && !intervention) throw new Error(`Ready correction pattern ${index + 1} proposes no action.`);
-		if (disposition !== "ready" && (evalCase || intervention)) throw new Error(`Unready correction pattern ${index + 1} proposes an action.`);
-
 		const fingerprint = createHash("sha256").update(uniqueEvidence.join("\0")).digest("hex").slice(0, 10);
 		return {
-			id: `pattern-${fingerprint}`,
+			id: `cluster-${fingerprint}`,
 			title: bounded(title, 120),
 			summary: bounded(summary),
 			candidateIds: uniqueEvidence,
 			disposition,
-			proof: { kind: proofKind, reason: bounded(proofReason) },
-			...(evalCase ? { eval: evalCase } : {}),
-			...(intervention ? { intervention } : {}),
 			reason: bounded(reason),
 		};
 	});
 	const assignedCandidates = new Set<string>();
 	for (const [index, pattern] of patterns.entries()) {
 		for (const candidateId of pattern.candidateIds) {
-			if (assignedCandidates.has(candidateId)) {
-				throw new Error(`Correction pattern ${index + 1} reuses candidate ${candidateId}.`);
-			}
+			if (assignedCandidates.has(candidateId)) throw new Error(`Correction pattern ${index + 1} reuses candidate ${candidateId}.`);
 			assignedCandidates.add(candidateId);
 		}
 	}

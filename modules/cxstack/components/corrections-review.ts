@@ -44,8 +44,11 @@ function words(value: string) {
 }
 
 function patternTarget(pattern: CorrectionPattern) {
-	if (pattern.intervention) return `${pattern.intervention.scope} ${words(pattern.intervention.owner)}`;
-	return pattern.eval ? "evaluation" : "evidence only";
+	if (pattern.intervention) {
+		const project = pattern.intervention.targetProject ? ` · ${pattern.intervention.targetProject}` : "";
+		return `${pattern.intervention.scope} ${words(pattern.intervention.owner)}${project}`;
+	}
+	return pattern.eval ? "evaluation" : "inspection needed";
 }
 
 function patternTimestamp(pattern: CorrectionPattern, candidates: Map<string, CorrectionCandidate>) {
@@ -59,20 +62,24 @@ function itemFor(pattern: CorrectionPattern, state: CorrectionState, candidates:
 	const decision = state.decisions.get(pattern.id);
 	const outcome = state.outcomes.get(pattern.id);
 	const status = decision === "accepted"
-		? outcome === "applied"
-			? "Applied"
+		? outcome === "applied" || outcome === "verified"
+			? "Verified"
 			: outcome === "rejected_by_proof"
 				? "Proof failed"
 				: "Accepted"
 		: decision === "rejected"
 			? "Rejected"
-			: decision === "deferred"
-				? "Deferred"
-				: pattern.disposition === "ready"
-					? "Ready"
-					: pattern.disposition === "hold"
-						? "Watching"
-						: "One-off";
+			: decision === "already_fixed"
+				? "Already fixed"
+				: decision === "duplicate"
+					? "Duplicate"
+					: decision === "deferred"
+						? "Deferred"
+						: pattern.disposition === "ready"
+							? "Ready"
+							: pattern.disposition === "hold"
+								? "Watching"
+								: "One-off";
 	return {
 		pattern,
 		candidates: pattern.candidateIds.flatMap((id) => {
@@ -91,8 +98,8 @@ export function buildCorrectionReviewGroups(state: CorrectionState): CorrectionR
 	const active = recentFirst(state.patterns);
 	const history = recentFirst(state.allPatterns.filter((pattern) => {
 		const decision = state.decisions.get(pattern.id);
-		return (decision === "accepted" || decision === "rejected")
-			&& !(decision === "accepted" && state.outcomes.get(pattern.id) === "rejected_by_proof");
+		if (decision === "rejected" || decision === "already_fixed" || decision === "duplicate") return true;
+		return decision === "accepted" && ["applied", "verified"].includes(state.outcomes.get(pattern.id) ?? "");
 	}));
 	return {
 		ready: active
@@ -142,13 +149,13 @@ function proposalLines(theme: CorrectionReviewTheme, item: CorrectionReviewItem 
 
 	addBlock("Summary", item.pattern.summary);
 	addBlock(
-		"Proposed change",
+		item.pattern.intervention || item.pattern.eval ? "Proposed change" : "Next step",
 		item.pattern.intervention?.exactChange
 			?? item.pattern.eval?.expectedBehavior
-			?? item.pattern.proof.reason,
+			?? "Discuss this evidence so a tool-using agent can inspect the current owner and prepare an exact proposal.",
 	);
 	if (item.pattern.intervention) addBlock("Why this destination", item.pattern.intervention.whyThisOwner);
-	addBlock("Proof", `${words(item.pattern.proof.kind)}. ${item.pattern.proof.reason}`);
+	if (item.pattern.proof) addBlock("Proof", `${words(item.pattern.proof.kind)}. ${item.pattern.proof.reason}`);
 	return lines;
 }
 
@@ -211,6 +218,8 @@ export class CorrectionReviewComponent implements Component {
 	private decide(decision: CorrectionReviewDecision) {
 		const item = this.selectedItem;
 		if (!item || (this.section !== "ready" && this.section !== "deferred")) return;
+		if (item.status === "Accepted") return;
+		if (decision === "accepted" && !item.pattern.intervention && !item.pattern.eval) return;
 		if (decision === "deferred" && this.section === "deferred") return;
 		this.onAction({ type: "decide", patternId: item.pattern.id, decision });
 	}
@@ -287,12 +296,13 @@ export class CorrectionReviewComponent implements Component {
 		const progress = this.maxScroll === 0 ? "100%" : `${Math.round((this.scroll / this.maxScroll) * 100)}%`;
 		const body = Array.from({ length: viewportHeight }, (_, index) => pad(`  ${visible[index] ?? ""}`, width));
 		const rule = divider("─".repeat(width));
-		const actionable = this.section === "ready" || this.section === "deferred";
+		const actionable = (this.section === "ready" || this.section === "deferred") && this.selectedItem?.status !== "Accepted";
 		const navigation = pad(` ↑↓ scroll · ←→ previous/next · Tab queue · e evidence · c discuss${" ".repeat(4)}${progress} `, width);
+		const canAccept = Boolean(this.selectedItem?.pattern.intervention || this.selectedItem?.pattern.eval);
 		const decisions = actionable
 			? this.section === "ready"
-				? " a accept · r reject · d defer · Esc/q return "
-				: " a accept · r reject · Esc/q return "
+				? ` ${canAccept ? "a accept · " : ""}r reject · d defer · Esc/q return `
+				: ` ${canAccept ? "a accept · " : ""}r reject · Esc/q return `
 			: " c discuss · Esc/q return ";
 		return [
 			border("─".repeat(width)),

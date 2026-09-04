@@ -65,6 +65,7 @@ function fixture(): CorrectionState {
 	const history = readyPattern("pattern-history", "candidate-history", "Avoid stale package forks");
 	return {
 		candidates: candidates.slice(0, 3),
+		groupingCandidates: candidates.slice(0, 3),
 		patterns: [ready, deferred, watching],
 		allCandidates: candidates,
 		allPatterns: [ready, deferred, watching, history],

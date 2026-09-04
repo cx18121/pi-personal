@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	appendCorrectionEvent,
+	CORRECTION_GROUPING_VERSION,
 	correctionState,
 	correctionsFile,
 	createCorrectionCandidate,
 	extractCorrectionMarker,
+	freezeCorrectionPattern,
 	inferCorrectionSource,
+	parseCorrectionProposal,
 	parseGroupingOutput,
 	readCorrectionEvents,
 } from "../lib/corrections.ts";
@@ -78,30 +81,20 @@ describe("correction storage", () => {
 		})).toThrow("is not a user message");
 	});
 
-	test("validates grouping evidence and creates stable pattern ids", () => {
+	test("groups evidence without authoring a proposal", () => {
 		const recorded = candidate();
 		const output = JSON.stringify([{
 			title: "Unnecessary machinery",
 			summary: "The agent proposed tooling without a current failure.",
 			candidateIds: [recorded.id],
 			disposition: "ready",
-			proof: {
-				kind: "new_mechanical_eval",
-				reason: "No existing case covers the routing outcome.",
-			},
-			eval: {
-				input: "What should we improve next?",
-				expectedBehavior: "Compare against doing nothing.",
-				forbiddenBehavior: ["Propose machinery without a current failure"],
-				rubric: [],
-				models: ["openai", "fable"],
-			},
 			reason: "The correction identifies a durable prioritization rule.",
 		}]);
 		const first = parseGroupingOutput(output, [recorded]);
 		const second = parseGroupingOutput(output, [recorded]);
 		expect(first).toEqual(second);
-		expect(first[0]?.id).toStartWith("pattern-");
+		expect(first[0]?.id).toStartWith("cluster-");
+		expect(first[0]?.intervention).toBeUndefined();
 		const repeatedEvidence = output.replace(`"candidateIds":["${recorded.id}"]`, `"candidateIds":["${recorded.id}","${recorded.id}"]`);
 		expect(parseGroupingOutput(repeatedEvidence, [recorded])[0]).toMatchObject({
 			id: first[0]?.id,
@@ -112,29 +105,112 @@ describe("correction storage", () => {
 		expect(() => parseGroupingOutput(duplicate, [recorded])).toThrow("reuses candidate");
 	});
 
-	test("requires proof, earns evals, and keeps one intervention owner", () => {
+	test("freezes evidence before attaching an inspected proposal", () => {
 		const recorded = candidate();
-		const intervention = JSON.stringify([{
+		const cluster = parseGroupingOutput(JSON.stringify([{
 			title: "Prioritize common work",
 			summary: "Frequent value was underweighted.",
 			candidateIds: [recorded.id],
 			disposition: "ready",
+			reason: "A strong correction identifies baseline behavior.",
+		}]), [recorded])[0]!;
+		const frozen = freezeCorrectionPattern(cluster);
+		expect(frozen.id).toStartWith("proposal-");
+		expect(frozen.candidateIds).toEqual([recorded.id]);
+		expect(frozen.intervention).toBeUndefined();
+
+		const proposal = parseCorrectionProposal({
 			proof: { kind: "existing_test", reason: "The routing suite covers this contract." },
 			intervention: {
 				action: "change",
 				owner: "agents",
 				scope: "global",
-				exactChange: "Add the 98/98 priority rule to AGENTS.md.",
-				whyThisOwner: "It applies to nearly every task even when CX is off.",
+				exactChange: "Clarify the existing priority rule.",
+				whyThisOwner: "It applies even when CX is off.",
 			},
-			reason: "A strong correction identifies baseline behavior.",
-		}]);
-		expect(parseGroupingOutput(intervention, [recorded])[0]?.intervention?.owner).toBe("agents");
-		expect(parseGroupingOutput(intervention.replace('"agents"', '"project_docs"'), [recorded])[0]?.intervention?.owner).toBe("project_docs");
+		});
+		expect(proposal.intervention?.owner).toBe("agents");
+		expect(() => parseCorrectionProposal({
+			proof: { kind: "direct_observation", reason: "Observed." },
+			intervention: {
+				action: "add",
+				owner: "memory",
+				scope: "project",
+				exactChange: "Remember it.",
+				whyThisOwner: "It is a project preference.",
+			},
+		})).toThrow("targetProject");
+	});
 
-		const uselessEval = intervention
-			.replace('"existing_test"', '"new_live_eval"')
-			.replace('"intervention":', '"eval":null,"intervention":');
-		expect(() => parseGroupingOutput(uselessEval, [recorded])).toThrow("Invalid correction eval");
+	test("keeps legacy applied outcomes terminal", () => {
+		const recorded = candidate();
+		const pattern = {
+			id: "pattern-legacy",
+			title: "Legacy proposal",
+			summary: "A correction accepted by the previous format.",
+			candidateIds: [recorded.id],
+			disposition: "ready" as const,
+			proof: { kind: "direct_observation" as const, reason: "Observed." },
+			intervention: {
+				action: "add" as const,
+				owner: "memory" as const,
+				scope: "global" as const,
+				exactChange: "Remember it.",
+				whyThisOwner: "It is a stable preference.",
+			},
+			reason: "Legacy evidence.",
+		};
+		const state = correctionState([
+			{ type: "candidate_recorded", at: recorded.createdAt, candidate: recorded },
+			{ type: "grouping_snapshot", at: recorded.createdAt, candidateIds: [recorded.id], patterns: [pattern] },
+			{ type: "proposal_surfaced", at: recorded.createdAt, patternId: pattern.id },
+			{ type: "proposal_decided", at: recorded.createdAt, patternId: pattern.id, decision: "accepted" },
+			{ type: "proposal_outcome", at: recorded.createdAt, patternId: pattern.id, outcome: "applied", evidence: "Saved." },
+		]);
+		expect(state.candidates).toHaveLength(0);
+		expect(state.allPatterns.map(({ id }) => id)).toContain(pattern.id);
+	});
+
+	test("keeps surfaced evidence stable until verification finishes", () => {
+		const first = candidate();
+		const second = { ...candidate(), id: "correction-second", source: { requestEntryId: "request-2", assistantEntryId: "answer-2", correctionEntryId: "correction-2" } };
+		const cluster = parseGroupingOutput(JSON.stringify([{
+			title: "Verify state",
+			summary: "The agent used stale evidence.",
+			candidateIds: [first.id],
+			disposition: "ready",
+			reason: "Repeated claims need direct checks.",
+		}]), [first])[0]!;
+		const frozen = freezeCorrectionPattern(cluster);
+		const events = [
+			{ type: "candidate_recorded", at: first.createdAt, candidate: first },
+			{ type: "candidate_recorded", at: second.createdAt, candidate: second },
+			{ type: "grouping_snapshot", at: first.createdAt, version: CORRECTION_GROUPING_VERSION, candidateIds: [first.id], patterns: [cluster] },
+			{ type: "proposal_surfaced", at: first.createdAt, patternId: frozen.id, pattern: frozen },
+		] as const;
+		const surfaced = correctionState([...events]);
+		expect(surfaced.patterns).toContainEqual(frozen);
+		expect(surfaced.groupingCandidates.map(({ id }) => id)).toEqual([second.id]);
+
+		const legacy = correctionState([...events, {
+			type: "grouping_snapshot",
+			at: second.createdAt,
+			candidateIds: [first.id, second.id],
+			patterns: [{ ...cluster, id: "pattern-written-by-old-session", candidateIds: [first.id, second.id] }],
+		}]);
+		expect(legacy.patterns.map(({ id }) => id)).toEqual([frozen.id]);
+		expect(legacy.groupingCandidates.map(({ id }) => id)).toEqual([second.id]);
+
+		const accepted = correctionState([...events, { type: "proposal_decided", at: first.createdAt, patternId: frozen.id, decision: "accepted" }]);
+		expect(accepted.candidates.map(({ id }) => id)).toContain(first.id);
+		expect(accepted.patterns.map(({ id }) => id)).toContain(frozen.id);
+
+		const verified = correctionState([
+			...events,
+			{ type: "proposal_decided", at: first.createdAt, patternId: frozen.id, decision: "accepted" },
+			{ type: "proposal_outcome", at: first.createdAt, patternId: frozen.id, outcome: "verified", evidence: "Focused proof passed." },
+		]);
+		expect(verified.candidates.map(({ id }) => id)).not.toContain(first.id);
+		expect(verified.patterns.map(({ id }) => id)).not.toContain(frozen.id);
 	});
 });

@@ -75,14 +75,26 @@ ${pattern.eval ? `Eval:\n${JSON.stringify(pattern.eval, null, 2)}\n` : ""}${patt
 If the proof does not improve its target behavior or a relevant regression appears, revert the candidate intervention and call correction_outcome with outcome rejected_by_proof. Otherwise call correction_outcome with outcome applied and concise evidence.`;
 const sameValues = (left: string[], right: string[]) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
 
-function fableModel(ctx: ExtensionContext): Model<Api> {
-	const matches = ctx.scopedModels.map(({ model }) => model)
-		.filter(({ provider, id }) => provider === "anthropic" && id.includes("fable"));
-	const model = matches[0];
-	if (matches.length !== 1 || !model) {
-		throw new Error(`Correction grouping requires one scoped Fable model; found ${matches.length}.`);
+const versionKey = (id: string) => (id.match(/\d+/g) ?? []).map(Number);
+const newerVersionFirst = (left: string, right: string) => {
+	const [leftKey, rightKey] = [versionKey(left), versionKey(right)];
+	for (let index = 0; index < Math.max(leftKey.length, rightKey.length); index += 1) {
+		const difference = (rightKey[index] ?? -1) - (leftKey[index] ?? -1);
+		if (difference !== 0) return difference;
 	}
+	return right.localeCompare(left);
+};
+
+export function selectFableModel(models: Model<Api>[]): Model<Api> {
+	const model = models
+		.filter(({ provider, id }) => provider === "anthropic" && id.includes("fable"))
+		.sort((left, right) => newerVersionFirst(left.id, right.id))[0];
+	if (!model) throw new Error("Correction grouping requires a scoped Anthropic Fable model; found none.");
 	return model;
+}
+
+function fableModel(ctx: ExtensionContext): Model<Api> {
+	return selectFableModel(ctx.scopedModels.map(({ model }) => model));
 }
 
 async function defaultGroup(

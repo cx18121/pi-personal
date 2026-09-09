@@ -1,12 +1,12 @@
 # Feature
 
-Use for material new or changed production behavior. Read the Change Spine first and apply these route-specific requirements under its named concepts. Do not copy them into Todo.
+Use for material new or changed production behavior. Read the Change Spine first and apply these route-specific requirements under its named concepts.
 
 Under **Establish route evidence**:
 
 1. **Name the behavior and consumer.** State the changed user outcome, unchanged behavior, acceptance examples, and important failure states.
 2. **Name the data shape and owner.** Identify the values, states, actors, writers, readers, and owning seam before writing logic.
-3. **Run architecture work when structurally triggered.** Use the Architecture Challenge when the change affects a public interface, crosses a system boundary, moves ownership, introduces a durable model or registry, changes a shared path, or has materially different whole-design shapes.
+3. **Check readiness.** Apply the structural triggers and review requirements in Readiness Review.
 4. **Confirm the implementation contract.** Do not mutate while a required product, architecture, rollout, or maintenance decision remains open.
 
 Under **Work in verifiable units**:

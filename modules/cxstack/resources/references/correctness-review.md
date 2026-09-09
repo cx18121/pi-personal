@@ -1,6 +1,6 @@
 # Correctness Review
 
-Run only when invoked by Review step 5 after accepted maintainability changes, before final behavior checks or delivery.
+Run only when invoked by Review step 5 after accepted maintainability changes, before delivery or completion.
 
 Launch one fresh background child with `spawn_agent` using the complementary choice from Model roles. The child is read only because the delegated task says so.
 
@@ -18,6 +18,6 @@ Ask it to try to falsify correctness. It should trace concrete execution paths, 
 
 A finding requires a concrete broken outcome, violated invariant, or missing proof with exact source evidence. Style, speculative hardening, and unrelated improvements are not findings. The child does not edit files.
 
-This review is a barrier. Do not run final behavior checks, enter Delivery, or claim completion until the child result arrives and is resolved. Continue only independent read-only inspection while it runs, or return control and let the result wake the session. Do not poll `list_agents` for ordinary completion. A failed child leaves correctness review unresolved.
+This review blocks mutation, Delivery, and completion until the child result arrives and is resolved. While it runs, perform independent read-only inspection or non-destructive checks that leave the reviewed artifact and the child's working tree unchanged. Checks must stay within existing authorization and avoid shared-resource conflicts. Record failures without fixing them yet. If no independent work remains, return control and let the result wake the session. Do not poll `list_agents` for ordinary completion. A failed child leaves correctness review unresolved.
 
 The parent verifies every finding and records it as accepted, rejected, or unresolved. Any accepted fix leaves Review and enters the appropriate change route, then starts Review again on the changed artifact. Run another correctness review only when a material fix changed reviewed behavior or new evidence can settle an important claim. An unchanged unresolved claim is reported, not reviewed in a loop.

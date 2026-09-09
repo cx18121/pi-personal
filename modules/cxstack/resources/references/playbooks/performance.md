@@ -1,6 +1,6 @@
 # Performance
 
-Use for consequential measured speed, memory, CPU, I/O, cost, or throughput problems. Read the Change Spine first and apply these route-specific requirements under its named concepts. Do not copy them into Todo.
+Use for consequential measured speed, memory, CPU, I/O, cost, or throughput problems. Read the Change Spine first and apply these route-specific requirements under its named concepts.
 
 Under **Establish route evidence**:
 

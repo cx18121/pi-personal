@@ -1,6 +1,6 @@
 # Diagnose and Fix
 
-Use for consequential defects, regressions, and incidents when repair is requested. Read the Change Spine first and apply these route-specific requirements under its named concepts. Do not copy them into Todo.
+Use for consequential defects, regressions, and incidents when repair is requested. Read the Change Spine first and apply these route-specific requirements under its named concepts.
 
 Under **Establish route evidence**:
 

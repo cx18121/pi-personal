@@ -1,6 +1,6 @@
 # Change Spine
 
-Feature, Diagnose and Fix, Performance, Refactor, and Prototype use this spine as an execution checklist. Apply the active route's requirements under the named spine concepts. Todo records only actual independent work, dependencies, and waiting gates; never mirror these steps or route requirements into Todo.
+Feature, Diagnose and Fix, Performance, Refactor, and Prototype use this spine as an execution checklist. Apply the active route's requirements under the named spine concepts.
 
 1. **Reground.** Read the confirmed outcome, decisions, scope, exclusions, proof plan, current repository state, and project rules before changing anything.
 2. **Establish route evidence.** Complete the active route's required baseline before implementation.

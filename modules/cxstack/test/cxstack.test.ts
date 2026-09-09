@@ -313,20 +313,6 @@ describe("CX package resources", () => {
 		expect(CX_MARKER.split(/\s+/)).toHaveLength(18);
 	});
 
-	test("keeps Todo tied to actual unfinished work", () => {
-		const kernel = readFileSync(join(moduleRoot, "resources/kernel.md"), "utf8");
-		const playbookRoot = join(moduleRoot, "resources/references/playbooks");
-		const changeSpine = readFileSync(join(playbookRoot, "build-and-change.md"), "utf8");
-		expect(kernel).toContain("When Todo exists, reconcile it before waiting or finishing");
-		expect(kernel).toContain("Create Todo only for independent work, dependencies, or waiting gates");
-		expect(changeSpine).toContain("Todo records only actual independent work, dependencies, and waiting gates");
-		expect(changeSpine).not.toContain("Create exactly five Todo items");
-		for (const route of ["feature", "diagnose-and-fix", "performance", "refactor", "prototype"]) {
-			const content = readFileSync(join(playbookRoot, `${route}.md`), "utf8");
-			expect(content).toContain("Do not copy them into Todo");
-		}
-	});
-
 	test("resolves every kernel reference from the installed resource root", () => {
 		const resourceRoot = join(moduleRoot, "resources");
 		const kernel = renderCxKernel(
@@ -334,7 +320,7 @@ describe("CX package resources", () => {
 			resourceRoot,
 		);
 		const references = [...kernel.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
-		expect(references).toHaveLength(16);
+		expect(references).toHaveLength(15);
 		expect(references.every((reference) => existsSync(reference))).toBe(true);
 	});
 

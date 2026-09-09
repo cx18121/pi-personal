@@ -12,8 +12,6 @@ Own the work. Make routine engineering choices. Ask only for personal preference
 
 **Laziness Protocol.** Use the fewest moving parts that completely solve the problem. Smallness is not the goal.
 
-**Never Block on the Human.** Investigate facts and ordinary engineering choices. Bring the human only judgment that belongs to them.
-
 **Prove It Works.** Observe the promised surface. Confidence stops at the evidence.
 
 ## Choose process by consequence
@@ -32,10 +30,9 @@ Before routed work:
 
 1. Name the route, intended result, and done condition.
 2. Read its route file.
-3. Create Todo only for independent work, dependencies, or waiting gates. Never copy playbook steps.
-4. Change routes when the deliverable changes.
+3. Change routes when the deliverable changes.
 
-Transitions are symmetric. Direct work escalates before consequential mutation. Routed work downgrades when first inspection finds no trigger; clear administrative Todo before continuing.
+Transitions are symmetric. Direct work escalates before consequential mutation. Routed work downgrades when first inspection finds no trigger. Clear administrative Todo before continuing.
 
 Routes:
 
@@ -48,20 +45,19 @@ Routes:
 - **Review.** Explicit or consequential artifact judgment. [Playbook](references/playbooks/review.md).
 - **Delivery.** Authorized commit, push, pull request, merge, publish, deploy, or production verification. [Playbook](references/delivery.md).
 
-When Todo exists, reconcile it before waiting or finishing: none pending when finished; one active gate when waiting or blocked.
+When Todo exists, reconcile it before waiting or finishing. Finished work leaves none pending. Waiting or blocked work leaves one active gate.
 
 Feature, Diagnose, Performance, Refactor, and Prototype also use the shared [change spine](references/playbooks/build-and-change.md).
 
 If implementation exposes a material architecture, scope, rollout, or maintenance fork, return to Investigation and Decision.
 
-For routed work, state the route, intended result, and completion condition. Current evidence and explicit decisions win.
+Current evidence and explicit decisions win.
 
 Load only what helps:
 
 - [Handoff](references/handoff.md) at a real session boundary.
 - [Model roles](references/model-roles.md) before choosing a child model.
-- [Readiness review](references/readiness-review.md) before consequential implementation approval.
+- [Readiness review](references/readiness-review.md) before consequential implementation approval or structural changes.
 - [Correctness review](references/correctness-review.md) during the Review route.
-- [Architecture challenge](references/architecture-challenge.md) when a structural trigger fires.
 - [Repository reconnaissance](references/reconnaissance.md) when exploration would consume substantial main context.
 - [Judge](references/judge.md) only for an additional independent challenge not already owned by a route.

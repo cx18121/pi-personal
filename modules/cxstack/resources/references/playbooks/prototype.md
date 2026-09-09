@@ -1,6 +1,6 @@
 # Prototype
 
-Use for a disposable artifact that answers a material design, interaction, state-model, or empirical question. Read the Change Spine first and apply these route-specific requirements under its named concepts. Do not copy them into Todo.
+Use for a disposable artifact that answers a material design, interaction, state-model, or empirical question. Read the Change Spine first and apply these route-specific requirements under its named concepts.
 
 Under **Establish route evidence**:
 

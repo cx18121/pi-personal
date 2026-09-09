@@ -36,7 +36,13 @@ CX asks the agent to:
 
 Direct is the default for ordinary questions, recommendations, reversible local work, and small fixes. Work earns a route only when a wrong result is costly, hidden, or hard to undo; when it materially affects production, persistent data, security, money, deployment, shared interfaces, or durable architecture; or when review or delivery is explicitly requested. A route names the authority boundary, not the amount of ceremony. Todo records actual independent work, dependencies, and waiting gates, never copied playbook steps. Direct work can escalate when consequences appear, and routed work can return to direct before process starts.
 
+In this setup, `~/.config/rpiv-todo/config.json` owns Todo creation guidance through the tool's prompt override. Global `~/.pi/agent/AGENTS.md` owns the writing baseline. Both live in the dotfiles `pi` package, outside CXStack. Install that package alongside CXStack and reload Pi after changing these prompts.
+
 CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries actual unfinished work when a task needs one.
+
+Readiness Review owns pre-implementation review, including the structural triggers and architecture questions. When both readiness and architecture apply, one child covers both. A settled review carries into implementation unless the direction, scope, or design materially changes.
+
+During Correctness Review, independent non-destructive checks may run against the unchanged reviewed artifact. The review still blocks mutation, delivery, and completion. Checks invalidated by later fixes must run again.
 
 ## Audit
 

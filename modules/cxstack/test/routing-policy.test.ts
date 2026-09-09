@@ -7,7 +7,6 @@ const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path: string) => readFileSync(resolve(moduleRoot, path), "utf8");
 const kernel = read("resources/kernel.md");
 const readme = read("README.md");
-const changeSpine = read("resources/references/playbooks/build-and-change.md");
 const investigation = read("resources/references/playbooks/investigate-and-decide.md");
 const review = read("resources/references/playbooks/review.md");
 
@@ -29,12 +28,8 @@ describe("CX routing policy", () => {
 
 	test("keeps routes proportional and transitions symmetric", () => {
 		expect(kernel).toContain("A route names authority, not ceremony");
-		expect(kernel).toContain("Create Todo only for independent work, dependencies, or waiting gates");
-		expect(kernel).toContain("Never copy playbook steps");
 		expect(kernel).toContain("Transitions are symmetric");
 		expect(kernel).toContain("Routed work downgrades when first inspection finds no trigger");
-		expect(changeSpine).toContain("Todo records only actual independent work, dependencies, and waiting gates");
-		expect(changeSpine).not.toContain("Create exactly five Todo items");
 	});
 
 	test("earns maintainability and correctness review from risk", () => {

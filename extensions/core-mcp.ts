@@ -60,9 +60,19 @@ export default createMcpAdapter({
 				directTools: false,
 			},
 			exa: {
-				url: "https://mcp.exa.ai/mcp",
+				url: "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa,agent_run",
+				headers: {
+					"x-api-key": "!/usr/bin/security find-generic-password -a charliexue -s pi-web-access-exa -w",
+				},
 				lifecycle: "lazy",
+				requestTimeoutMs: 480000,
 				directTools: false,
+				includeTools: [
+					"web_search_exa",
+					"web_fetch_exa",
+					"web_search_advanced_exa",
+					"agent_run",
+				],
 			},
 			betterstack: {
 				url: "https://mcp.betterstack.com",

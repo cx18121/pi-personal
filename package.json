@@ -14,7 +14,7 @@
   "dependencies": {
     "minisearch": "7.2.0",
     "pi-intercom": "0.10.1",
-    "pi-mcp-adapter": "2.25.0",
+    "pi-mcp-adapter": "2.33.0",
     "sharp": "0.35.3"
   },
   "peerDependencies": {

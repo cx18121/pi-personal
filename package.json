@@ -6,7 +6,7 @@
   "scripts": {
     "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
     "test:routing": "node ./modules/cxstack/test/routing-probe.mjs",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && npm --prefix vendor/pi-memory run typecheck"
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node extensions/tool-safety.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -23,9 +23,9 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.3",
-    "@earendil-works/pi-coding-agent": "0.84.3",
-    "@earendil-works/pi-tui": "0.84.3",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   },
@@ -61,6 +61,7 @@
       "./extensions/side-conversations.ts",
       "./extensions/superset.ts",
       "./extensions/time.ts",
+      "./extensions/tool-safety.ts",
       "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts",
       "./extensions/prompt-restore.ts"

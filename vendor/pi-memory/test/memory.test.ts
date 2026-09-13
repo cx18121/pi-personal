@@ -636,6 +636,67 @@ describe("startup context and compaction handoff", () => {
     }
   });
 
+  test("targets a nested repository explicitly without falling back to global", async () => {
+    const memoryDir = path.join(tempDir, "memory");
+    const repo = path.join(tempDir, "nested", "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    Bun.spawnSync(["git", "init", "-q"], { cwd: repo });
+    const tools = new Map<string, any>();
+    const oldMemoryDir = process.env.PI_MEMORY_DIR;
+    const oldSubagentMode = process.env.PI_MEMORY_SUBAGENT_MODE;
+    process.env.PI_MEMORY_DIR = memoryDir;
+    try {
+      registerMemory({
+        on() {},
+        registerTool(tool: any) {
+          tools.set(tool.name, tool);
+        },
+      } as any);
+      const context = {
+        cwd: tempDir,
+        sessionManager: { getSessionId: () => "root-session" },
+      };
+      const papercut = tools.get("papercut");
+      const added = await papercut.execute(
+        "add",
+        { scope: "project", projectPath: path.relative(tempDir, repo), action: "add", text: "nested target" },
+        new AbortController().signal,
+        undefined,
+        context,
+      );
+      expect(added.isError).toBeUndefined();
+      expect(added.details.scope).toBe("project");
+      expect(readText(added.details.path)).toContain("nested target");
+
+      const invalid = await papercut.execute(
+        "invalid",
+        { scope: "project", projectPath: "missing", action: "add", text: "wrong scope" },
+        new AbortController().signal,
+        undefined,
+        context,
+      );
+      expect(invalid.isError).toBeTrue();
+      expect(invalid.content[0].text).toContain("Explicit project path is not inside a Git repository");
+      expect(readText(checklistFilePath(path.join(memoryDir, "global"), "papercuts"))).toBe("");
+
+      process.env.PI_MEMORY_SUBAGENT_MODE = "subagent";
+      const blocked = await tools.get("memory_read").execute(
+        "subagent",
+        { scope: "project", projectPath: repo, target: "memory" },
+        new AbortController().signal,
+        undefined,
+        context,
+      );
+      expect(blocked.isError).toBeTrue();
+      expect(blocked.content[0].text).toContain("Explicit project targeting is available only to the root agent");
+    } finally {
+      if (oldMemoryDir === undefined) delete process.env.PI_MEMORY_DIR;
+      else process.env.PI_MEMORY_DIR = oldMemoryDir;
+      if (oldSubagentMode === undefined) delete process.env.PI_MEMORY_SUBAGENT_MODE;
+      else process.env.PI_MEMORY_SUBAGENT_MODE = oldSubagentMode;
+    }
+  });
+
   test("loads only indexes and open active-project scratchpad items", () => {
     const locations = locationsWithProject();
     writeMemory({ dir: locations.globalDir, content: "global index fact" });

@@ -26,8 +26,12 @@ import {
 
 const scopeSchema = Type.Optional(
   StringEnum(["global", "project"] as const, {
-    description: "Memory scope. Defaults to project inside Git and global outside Git.",
+    description: "Memory scope. Defaults to project at projectPath or the active directory when either is inside Git, otherwise global.",
   }),
+);
+
+const projectPathSchema = Type.Optional(
+  Type.String({ description: "Repository path to use instead of the active working directory." }),
 );
 
 function textResult(text: string, details: Record<string, unknown> = {}) {
@@ -39,15 +43,21 @@ function errorResult(error: unknown) {
   return { ...textResult(`Memory error: ${message}`), isError: true };
 }
 
-function runtime(ctx: ExtensionContext) {
-  return {
-    locations: resolveLocations(ctx.cwd),
-    role: resolveAgentRole(process.env, ctx.sessionManager.getSessionId()),
-  };
+function runtime(ctx: ExtensionContext, projectPath?: string) {
+  const role = resolveAgentRole(process.env, ctx.sessionManager.getSessionId());
+  if (projectPath && role !== "root") {
+    throw new Error("Explicit project targeting is available only to the root agent.");
+  }
+  const target = projectPath ? path.resolve(ctx.cwd, projectPath) : ctx.cwd;
+  const locations = resolveLocations(target);
+  if (projectPath && !locations.project) {
+    throw new Error(`Explicit project path is not inside a Git repository: ${projectPath}`);
+  }
+  return { locations, role };
 }
 
-function scopePath(ctx: ExtensionContext, requested?: MemoryScope) {
-  const state = runtime(ctx);
+function scopePath(ctx: ExtensionContext, requested?: MemoryScope, projectPath?: string) {
+  const state = runtime(ctx, projectPath);
   return { ...state, ...resolveScope(state.locations, requested) };
 }
 
@@ -68,13 +78,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       scope: scopeSchema,
+      projectPath: projectPathSchema,
       target: Type.Optional(StringEnum(["memory", "topic"] as const)),
       topic: Type.Optional(Type.String({ description: "Lowercase topic slug when target is topic." })),
       content: Type.String({ description: "Markdown to store." }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const state = scopePath(ctx, params.scope);
+        const state = scopePath(ctx, params.scope, params.projectPath);
         assertMemoryMutationPermission(state.role);
         const target = params.target ?? "memory";
         const filePath = writeMemory({
@@ -103,12 +114,13 @@ export default function registerMemory(pi: ExtensionAPI) {
     description: "Read global or active-project memory, topics, scratchpad, or papercuts.",
     parameters: Type.Object({
       scope: scopeSchema,
+      projectPath: projectPathSchema,
       target: StringEnum(["memory", "topic", "topics", "scratchpad", "papercuts"] as const),
       topic: Type.Optional(Type.String({ description: "Lowercase topic slug for target=topic." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const state = scopePath(ctx, params.scope);
+        const state = scopePath(ctx, params.scope, params.projectPath);
         if (params.target === "topics") {
           const topics = listTopics(state.dir);
           return textResult(topics.length ? topics.map((topic) => `- ${topic}`).join("\n") : "No topics found.", {
@@ -138,11 +150,12 @@ export default function registerMemory(pi: ExtensionAPI) {
       "Search local Markdown in global and active-project memory with in-process BM25+ ranking. Exact phrases rank first; prefix matching is enabled, with typo tolerance only as a fallback.",
     parameters: Type.Object({
       query: Type.String(),
+      projectPath: projectPathSchema,
       limit: Type.Optional(Type.Number({ description: "Maximum results, 1-25. Default 5." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const { locations } = runtime(ctx);
+        const { locations } = runtime(ctx, params.projectPath);
         const results = searchMemory(locations, params.query, params.limit ?? 5);
         if (!results.length) return textResult(`No memory found for "${params.query}".`, { count: 0 });
         const formatted = results
@@ -164,13 +177,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     description: "Remove matching memory entries and create a local recovery record before deletion.",
     parameters: Type.Object({
       scope: scopeSchema,
+      projectPath: projectPathSchema,
       target: Type.Optional(StringEnum(["memory", "topic"] as const)),
       topic: Type.Optional(Type.String()),
       match: Type.String({ description: "Case-insensitive substring identifying entries to remove." }),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const state = scopePath(ctx, params.scope);
+        const state = scopePath(ctx, params.scope, params.projectPath);
         assertMemoryMutationPermission(state.role);
         const result = forgetMemory({
           dir: state.dir,
@@ -192,10 +206,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     name: "memory_restore",
     label: "Memory Restore",
     description: "Restore entries deleted by memory_forget using its recovery ID.",
-    parameters: Type.Object({ recoveryId: Type.String() }),
+    parameters: Type.Object({ recoveryId: Type.String(), projectPath: projectPathSchema }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const { locations, role } = runtime(ctx);
+        const { locations, role } = runtime(ctx, params.projectPath);
         assertMemoryMutationPermission(role);
         const found = findRecoveryScope(locations, params.recoveryId);
         const result = restoreMemory(found.dir, params.recoveryId);
@@ -218,12 +232,13 @@ export default function registerMemory(pi: ExtensionAPI) {
       "Manage global or project unfinished-work checklists. Project scope is the default inside Git. Subagents are read-only.",
     parameters: Type.Object({
       scope: scopeSchema,
+      projectPath: projectPathSchema,
       action: StringEnum(["add", "done", "undo", "clear_done", "list"] as const),
       text: Type.Optional(Type.String()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const state = scopePath(ctx, params.scope);
+        const state = scopePath(ctx, params.scope, params.projectPath);
         assertScratchpadPermission(state.role, params.action);
         const filePath = checklistFilePath(state.dir, "scratchpad");
         const content = mutateChecklist({
@@ -249,13 +264,14 @@ export default function registerMemory(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       scope: scopeSchema,
+      projectPath: projectPathSchema,
       action: StringEnum(["add", "done", "undo", "clear_done", "list", "edit", "resolve"] as const),
       text: Type.Optional(Type.String({ description: "Item text or substring to match." })),
       replacement: Type.Optional(Type.String({ description: "Replacement text for edit." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       try {
-        const state = scopePath(ctx, params.scope);
+        const state = scopePath(ctx, params.scope, params.projectPath);
         assertPapercutPermission(state.role, params.action);
         const filePath = checklistFilePath(state.dir, "papercuts");
         const content = mutateChecklist({
@@ -276,10 +292,10 @@ export default function registerMemory(pi: ExtensionAPI) {
     name: "memory_status",
     label: "Memory Status",
     description: "Show local memory paths, active project identity, role, permissions, and file counts.",
-    parameters: Type.Object({}),
-    async execute(_id, _params, _signal, _update, ctx) {
+    parameters: Type.Object({ projectPath: projectPathSchema }),
+    async execute(_id, params, _signal, _update, ctx) {
       try {
-        const { locations, role } = runtime(ctx);
+        const { locations, role } = runtime(ctx, params.projectPath);
         const global = scopeInventory(locations.globalDir);
         const project = locations.projectDir ? scopeInventory(locations.projectDir) : null;
         const lines = [

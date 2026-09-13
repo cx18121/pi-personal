@@ -19,7 +19,7 @@
     ]
   },
   "scripts": {
-    "test": "bun test ./test/memory.ts",
+    "test": "bun test ./test/memory.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

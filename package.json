@@ -6,7 +6,7 @@
   "scripts": {
     "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
     "test:routing": "node ./modules/cxstack/test/routing-probe.mjs",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node extensions/tool-safety.ts && npm --prefix vendor/pi-memory run typecheck"
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node extensions/tool-safety.ts extensions/reasoning-label.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -62,6 +62,7 @@
       "./extensions/superset.ts",
       "./extensions/time.ts",
       "./extensions/tool-safety.ts",
+      "./extensions/reasoning-label.ts",
       "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts",
       "./extensions/prompt-restore.ts"

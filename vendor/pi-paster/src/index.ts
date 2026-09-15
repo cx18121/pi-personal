@@ -11,11 +11,7 @@ import {
 } from "./preview.ts";
 import { AttachmentStore } from "./store.ts";
 import { createImagePasteTerminalInputHandler } from "./terminal-input.ts";
-import type {
-  ImageAttachment,
-  ImageCompressionReportDetails,
-  PasterPreviewDetails,
-} from "./types.ts";
+import type { ImageCompressionReportDetails, PasterPreviewDetails } from "./types.ts";
 
 export * from "./clipboard.ts";
 export * from "./compress.ts";
@@ -36,7 +32,6 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
   const resolvedConfig = resolvePasterConfig(config);
   const store = new AttachmentStore();
   registerImageCompressionCommand(pi, resolvedConfig.imageCompression);
-  let pendingPreview: ImageAttachment[] = [];
   let activeEditor: PasterEditor | undefined;
   let unsubscribeTerminalInput: (() => void) | undefined;
 
@@ -57,8 +52,8 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
     },
   );
 
-  pi.registerMessageRenderer<PasterPreviewDetails>("paster-preview", (message, options, theme) => {
-    const placeholders = message.details?.placeholders ?? [];
+  pi.registerEntryRenderer<PasterPreviewDetails>("paster-preview", (entry, options, theme) => {
+    const placeholders = entry.data?.placeholders ?? [];
     const attachments = store
       .list()
       .filter((attachment) => placeholders.includes(attachment.placeholder));
@@ -77,7 +72,6 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
 
   pi.on("session_start", (_event, ctx) => {
     store.clear();
-    pendingPreview = [];
     if (!ctx.hasUI) return;
 
     unsubscribeTerminalInput?.();
@@ -134,7 +128,6 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
-    pendingPreview = [];
     if (ctx.hasUI) {
       unsubscribeTerminalInput?.();
       unsubscribeTerminalInput = undefined;
@@ -146,19 +139,6 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
     store.clear();
   });
 
-  function previewMessage(attachments: ImageAttachment[]) {
-    const placeholders = attachments.map((attachment) => attachment.placeholder);
-    const content = resolvedConfig.includeImagePathsInPrompt
-      ? appendImagePathContext("", attachments).trim()
-      : `(attachment preview: ${placeholders.join(", ")})`;
-    return {
-      customType: "paster-preview",
-      content,
-      display: true,
-      details: { placeholders },
-    };
-  }
-
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") return { action: "continue" as const };
     if (ctx.hasUI) {
@@ -168,30 +148,34 @@ export default function paster(pi: ExtensionAPI, config: PasterConfig = {}): voi
     const attachments = store.matchingPlaceholders(event.text);
     if (attachments.length === 0) return { action: "continue" as const };
 
-    if (ctx.isIdle()) {
-      pendingPreview = attachments;
-    } else {
-      // Queued steer/follow-up messages do not fire before_agent_start when they are
-      // later delivered by the running agent, so enqueue the preview alongside them now.
-      pi.sendMessage(previewMessage(attachments), { deliverAs: "followUp" });
-    }
-
     // Optimize images on-submit so we never exceed Anthropic's 5 MB/image or
     // 32 MB/request caps. Per-attachment caching means each image is only
     // resized/recompressed once across the whole session.
     const images = await imagesForTextOptimized(store, event.text, event.images);
+    const text = resolvedConfig.includeImagePathsInPrompt
+      ? appendImagePathContext(event.text, attachments)
+      : event.text;
 
     return {
       action: "transform" as const,
-      text: event.text,
+      text,
       images,
     };
   });
 
-  pi.on("before_agent_start", () => {
-    if (pendingPreview.length === 0) return;
-    const message = previewMessage(pendingPreview);
-    pendingPreview = [];
-    return { message };
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "user") return;
+    const text =
+      typeof event.message.content === "string"
+        ? event.message.content
+        : event.message.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n");
+    const placeholders = store
+      .matchingPlaceholders(text)
+      .map((attachment) => attachment.placeholder);
+    if (placeholders.length === 0) return;
+    pi.appendEntry<PasterPreviewDetails>("paster-preview", { placeholders });
   });
 }

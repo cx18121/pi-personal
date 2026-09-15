@@ -260,7 +260,8 @@ export default function registerMemory(pi: ExtensionAPI) {
     description:
       "Report and manage small workflow friction. Add even a first occurrence when a tool, prompt, skill, helper, or repository change could plausibly prevent it. Include the activity, friction, and plausible structural improvement. Skip incidental mistakes with no structural lesson and never include secrets. During an explicit approval-gated review, propose the entry and wait for selection. Any agent may append or list; only root agents may edit, resolve, or clear items.",
     promptGuidelines: [
-      "papercut: treat entries as evidence, not a backlog. Confirm the current failure, frequency, consequence, and owner before recommending work. Compare doing nothing or deferring. Target the observed failure rather than the suggested remedy.",
+      "papercut: treat entries as evidence, not a backlog. Before recommending a repair, confirm the current failure, frequency, consequence, and owner. Compare doing nothing or deferring. Target the observed failure rather than the suggested remedy.",
+      "papercut cleanup: when clearing resolved entries is authorized, clear them directly without reviewing them again. Resolve historical items from current code when it settles the recorded issue. Run additional checks only when they could change the resolution.",
     ],
     parameters: Type.Object({
       scope: scopeSchema,

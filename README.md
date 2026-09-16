@@ -66,11 +66,18 @@ Most of this package was written for my own setup. These parts have a direct ups
 
 The other extensions and support files were built directly for this package with Pi's extension APIs.
 
-## Install
+## Portable setup
+
+The top-level machine bootstrap in `cx18121/dotfiles` invokes this package. To apply it directly inside an already configured mise environment:
 
 ```bash
-cd ~/Projects/personal/pi-personal
-npm install
-pi install "$HOME/Projects/personal/pi-personal"
+mise run bootstrap -- macos
+mise run check -- macos
 ```
+
+Use `linux` on a Linux development host.
+
+`config/settings.base.json` contains shared preferences. The platform files contain complete package lists and platform-specific defaults. `scripts/settings.mjs` merges them with the optional machine-local overlay at `~/.config/pi/settings.local.json`, preserves Pi's changelog state, and writes `~/.pi/agent/settings.json` atomically.
+
+See `config/settings.local.example.json` for adding work-only or machine-specific packages without committing local paths.
 

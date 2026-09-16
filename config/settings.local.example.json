@@ -1,0 +1,11 @@
+{
+  "packagesAppend": [
+    {
+      "source": "../../Work/example/package",
+      "extensions": [
+        "extensions/example.ts"
+      ],
+      "skills": []
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+profile=${1:-}
+case "$profile" in
+  macos|linux) ;;
+  *)
+    printf 'usage: %s {macos|linux}\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
+lock_hash=$(node -e '
+  const { createHash } = require("node:crypto");
+  const { readFileSync } = require("node:fs");
+  process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"));
+' "$root/package-lock.json")
+stamp="$root/node_modules/.pi-personal-package-lock"
+if [[ ! -f "$stamp" || "$(<"$stamp")" != "$lock_hash" ]]; then
+  npm --prefix "$root" ci
+  printf '%s\n' "$lock_hash" > "$stamp"
+fi
+
+node "$root/scripts/settings.mjs" "$profile"
+pi update --extensions --approve
+mise -C "$root" run check -- "$profile"

@@ -122,7 +122,7 @@ const DIFF_PRESETS: Record<string, DiffPreset> = {
 	},
 };
 
-const SPLIT_MIN_WIDTH = envInt("DIFF_SPLIT_MIN_WIDTH", 80);
+const SPLIT_MIN_WIDTH = envInt("DIFF_SPLIT_MIN_WIDTH", Number.MAX_SAFE_INTEGER);
 const SPLIT_MIN_CODE_WIDTH = envInt("DIFF_SPLIT_MIN_CODE_WIDTH", 24);
 const SPLIT_MAX_WRAP_RATIO = 0.35;
 const SPLIT_MAX_WRAP_LINES = 10;
@@ -332,8 +332,8 @@ function autoDeriveBgFromTheme(theme: any): void {
 
 		BG_ADD = mixBg(addBase, addRgb, 0.15);
 		BG_DEL = mixBg(delBase, delRgb, 0.18);
-		BG_ADD_W = mixBg(addBase, addRgb, 0.3);
-		BG_DEL_W = mixBg(delBase, delRgb, 0.35);
+		BG_ADD_W = mixBg(addBase, addRgb, 0.45);
+		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
 		BG_GUTTER_ADD = mixBg(addBase, addRgb, 0.1);
 		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.12);
 		BG_EMPTY = BG_BASE;
@@ -479,6 +479,15 @@ export function resolveDiffColors(theme?: any): DiffColors {
 		_autoDerivePending = true;
 	}
 	_lastResolvedThemeKey = currentThemeKey;
+	if (theme?.getBgAnsi && BG_BASE === BG_DEFAULT) {
+		try {
+			const bgAnsi = theme.getBgAnsi("toolPendingBg");
+			if (parseAnsiRgb(bgAnsi)) {
+				BG_BASE = bgAnsi;
+				RST = `\x1b[0m${BG_BASE}`;
+			}
+		} catch {}
+	}
 	if (_autoDerivePending && theme?.getFgAnsi) {
 		autoDeriveBgFromTheme(theme);
 		_autoDerivePending = false;

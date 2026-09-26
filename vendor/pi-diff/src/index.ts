@@ -68,10 +68,8 @@ interface PiTheme {
 	bold(text: string): string;
 }
 
-const ARROW_PREFIXED_TOOL_HEADERS = new Set(["write", "create", "edit", "apply_patch"]);
-
 function formatToolHeaderName(name: string): string {
-	return ARROW_PREFIXED_TOOL_HEADERS.has(name) ? `← ${name}` : name;
+	return name;
 }
 
 function isToolResultError(result: { isError?: boolean }, context: { isError?: boolean }): boolean {
@@ -282,9 +280,9 @@ function autoDeriveBgFromTheme(theme: PiTheme): void {
 		BG_ADD = mixBg(addBase, addRgb, 0.15);
 		BG_DEL = mixBg(delBase, delRgb, 0.18);
 
-		// Word-level highlights — more prominent (30–35%)
-		BG_ADD_W = mixBg(addBase, addRgb, 0.3);
-		BG_DEL_W = mixBg(delBase, delRgb, 0.35);
+		// Word-level highlights — more prominent (45–50%)
+		BG_ADD_W = mixBg(addBase, addRgb, 0.45);
+		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
 
 		// Gutters — slightly subtler than lines (10–12%)
 		BG_GUTTER_ADD = mixBg(addBase, addRgb, 0.1);
@@ -444,7 +442,7 @@ function envBg(name: string, fallback: string): string {
 // --- Split-view thresholds ---
 // Split is preferred when there's real room. At narrow widths, a clean stacked
 // (unified) view is better than a cramped split with wrapping.
-const SPLIT_MIN_WIDTH = envInt("DIFF_SPLIT_MIN_WIDTH", 80); // allow split in normal terminals
+const SPLIT_MIN_WIDTH = envInt("DIFF_SPLIT_MIN_WIDTH", Number.MAX_SAFE_INTEGER); // unified unless opted in
 const SPLIT_MIN_CODE_WIDTH = envInt("DIFF_SPLIT_MIN_CODE_WIDTH", 24); // short balanced hunks can split
 const SPLIT_MAX_WRAP_RATIO = 0.35; // wrap-heavy hunks fall back to unified
 const SPLIT_MAX_WRAP_LINES = 10; // absolute cap before unified fallback
@@ -514,7 +512,7 @@ const ANSI_RE = new RegExp(`${ESC_RE}\\[[0-9;]*m`, "g");
 const ANSI_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([^m]*)m`, "g");
 const ANSI_PARAM_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([0-9;]*)m`, "g");
 const BG_DEFAULT = "\x1b[49m"; // reset to terminal default background
-let BG_BASE = BG_DEFAULT; // context rows use the terminal background, not a tool card
+let BG_BASE = BG_DEFAULT; // neutral card bg — updated from theme toolPendingBg
 
 // ---------------------------------------------------------------------------
 // Theme-aware diff colors
@@ -572,6 +570,15 @@ function resolveDiffColors(theme?: PiTheme): DiffColors {
 		_autoDerivePending = true;
 	}
 	_lastResolvedThemeKey = currentThemeKey;
+	if (theme?.getBgAnsi && BG_BASE === BG_DEFAULT) {
+		try {
+			const bgAnsi = theme.getBgAnsi("toolPendingBg");
+			if (parseAnsiRgb(bgAnsi)) {
+				BG_BASE = bgAnsi;
+				RST = `\x1b[0m${BG_BASE}`;
+			}
+		} catch {}
+	}
 
 	// Auto-derive bg colors from theme on first render (if no explicit preset/overrides)
 	if (_autoDerivePending && theme?.getFgAnsi) {
@@ -1409,13 +1416,13 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 	const TOOL_RESULT_INDENT = " ";
 	const TOOL_HEADER_LEFT_PAD = 0;
 	const DIFF_BODY_LEFT_PAD = 0;
-	/** Keep `edit` on the default host Box: no extra edge padding, no title/body gap. */
+	/** `edit` draws its own neutral card, padded like Pi's tool Box. */
 	const EDIT_DIFF_RESULT_FRAME = {
-		headerLeftPad: 0,
-		bodyLeftPad: 0,
-		topPad: 0,
+		headerLeftPad: 1,
+		bodyLeftPad: 1,
+		topPad: 1,
 		bottomPad: 0,
-		previewBottomPad: 0,
+		previewBottomPad: 1,
 	} as const;
 	function resolvePreviewDiffColors(theme: any): DiffColors {
 		resolveDiffColors(theme);
@@ -1594,16 +1601,10 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 		return true;
 	}
 
-	function editEditsCountLabel(edits: number, diffLines: number, theme: any): string {
-		const n = edits === 1 ? "1 edit" : `${edits} edits`;
-		return `${n}${diffLineCountLabel(diffLines, theme)}`;
-	}
-
 	function editCallStatsSuffix(toolCallId: string | undefined, theme: any): string {
 		const raw = toolCallId ? editHeaderStatsByCallId.get(toolCallId) : undefined;
 		if (!raw) return "";
-		const count = editEditsCountLabel(raw.edits, raw.diffLines, theme);
-		return `${TOOL_RESULT_INDENT}${theme.fg("muted", count)} ${summarizeThemed(raw.added, raw.removed, theme)}`;
+		return `${TOOL_RESULT_INDENT}${summarizeThemed(raw.added, raw.removed, theme)}`;
 	}
 
 	function formatEditDiffResultTitle(
@@ -1621,10 +1622,7 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 		frame: { headerLeftPad?: number; topPad?: number; bottomPad?: number },
 	): string {
 		const fp = d.filePath ?? d.summary ?? "";
-		const edits = d.edits ?? d.editCount ?? 1;
-		const diffLines =
-			typeof d.diffLineCount === "number" ? d.diffLineCount : (d.linesAdded ?? 0) + (d.linesRemoved ?? 0);
-		const suffix = `${TOOL_RESULT_INDENT}${theme.fg("muted", editEditsCountLabel(edits, diffLines, theme))} ${summarizeThemed(d.linesAdded ?? 0, d.linesRemoved ?? 0, theme)}`;
+		const suffix = `${TOOL_RESULT_INDENT}${summarizeThemed(d.linesAdded ?? 0, d.linesRemoved ?? 0, theme)}`;
 		return formatToolFrameHeader({
 			width,
 			label: "edit",

@@ -1,0 +1,21 @@
+{
+  "0.11.2": [
+    "Claude style no longer cuts commands to one row; long ones wrap, and only past two lines or 160 characters are shortened"
+  ],
+  "0.11.1": [],
+  "0.11.0": [
+    "Claude style: set \"style\": \"claude\" to see tool calls the way Claude Code shows them",
+    "Reads, searches, and listings fold into one line; Bash, Update, and Write keep their own rows",
+    "\"style\": \"off\" leaves Pi's own tool rows; silent mode stays \"mode\": \"silent\"",
+    "Edit diffs no longer show a gap marker twice"
+  ],
+  "0.10.1": [],
+  "0.10.0": [
+    "Silent mode shows only prompts and final answers (Ctrl+' or /silent)",
+    "Tools from other packages get the same compact rows as the built-ins",
+    "Edits show the lines they added and removed, in the diff colors",
+    "Thinking summaries are shown in full instead of cut off",
+    "Fullscreen scrolling stays in place when expanding rows or cycling thinking",
+    "Failed rows show a short reason while their output is hidden"
+  ]
+}

@@ -71,6 +71,7 @@
       "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts",
       "./vendor/pi-diff/src/index.ts",
+      "./vendor/pi-compact-tools/extensions/compact-tools.ts",
       "./extensions/prompt-restore.ts"
     ]
   }

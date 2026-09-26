@@ -45,15 +45,6 @@ function glowRadius(length: number): number {
 	return Math.max(2, Math.min(8, Math.ceil(length / 4)));
 }
 
-/** Render the working label with a proportional highlight sweeping left to right. */
-export function glowProgressMessage(
-	message: string,
-	frame: number,
-	theme: Theme,
-	level: ThinkingLevel,
-): string {
-	return paintGlowFrame(message, frame, theme, progressGlow(theme, level));
-}
 
 function paintGlowFrame(message: string, frame: number, theme: Theme, glow: ColorRamp | undefined): string {
 	const characters = [...message];

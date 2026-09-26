@@ -4,15 +4,8 @@ export const SUPPORTED_TOOLS = ["read", "write", "edit", "bash", "powershell", "
 export const SUPPORTED_TOOL_SET = new Set<string>(SUPPORTED_TOOLS);
 
 export type CompactToolName = (typeof SUPPORTED_TOOLS)[number];
-export type ShellToolName = "bash" | "powershell";
 export type ToolArgs = Record<string, unknown>;
 export type BuiltInDefinition = ToolDefinition<any, any, any>;
-
-export const DISPLAY_MODES = ["normal", "silent"] as const;
-export type DisplayMode = (typeof DISPLAY_MODES)[number];
-/** How tool rows are drawn: compactly, the way Claude Code draws them, or by Pi itself. */
-export const DISPLAY_STYLES = ["compact", "claude", "off"] as const;
-export type DisplayStyle = (typeof DISPLAY_STYLES)[number];
 
 export interface CustomToolsConfig {
 	/** Render tools registered by other extensions compactly as well. */
@@ -22,8 +15,6 @@ export interface CustomToolsConfig {
 }
 
 export interface CompactToolsConfig {
-	mode: DisplayMode;
-	style: DisplayStyle;
 	tools: CompactToolName[];
 	/** Built-ins always have an entry; custom tools may, and otherwise use custom_tools.auto_compact. */
 	auto_compact: Record<CompactToolName, boolean> & { [tool: string]: boolean | undefined };

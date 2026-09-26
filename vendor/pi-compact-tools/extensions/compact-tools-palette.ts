@@ -118,22 +118,7 @@ export function paintIndicator(theme: Theme, status: RowStatus, frame: number): 
 		: theme.fg(indicatorTone(status, frame), glyph);
 }
 
-/** How far the brightest activity dot moves from the level's color toward the label's crest. */
-const ACTIVITY_CREST_MIX = 0.3;
-/** Contrast against the background of an unlit dot: the level's hue, barely there. */
-const ACTIVITY_UNLIT = 0.05;
 
-/**
- * Silent-mode activity dots: an unlit dot is the thinking level's own hue faded
- * almost into the background, and a lit one shows that hue lifted a little. The
- * label's full crest washes every level toward the same near-white.
- */
-export function activityGlow(theme: Theme, level: ThinkingLevel): ColorRamp | undefined {
-	const glow = progressGlow(theme, level);
-	if (!glow) return undefined;
-	const lit = interpolateRgb(glow.from, glow.to, ACTIVITY_CREST_MIX);
-	return { from: withContrast(theme, lit, ACTIVITY_UNLIT, ACTIVITY_UNLIT), to: lit };
-}
 
 /** Sweep endpoints for the working label at a thinking level, resting color to crest. */
 export function progressGlow(theme: Theme, level: ThinkingLevel): ColorRamp | undefined {

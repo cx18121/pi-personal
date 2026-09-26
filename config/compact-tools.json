@@ -1,6 +1,4 @@
 {
-  "style": "compact",
-  "mode": "normal",
   "tools": [
     "read",
     "grep",

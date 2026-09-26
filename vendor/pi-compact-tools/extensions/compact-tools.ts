@@ -36,9 +36,7 @@ import {
 } from "./compact-tools-invocation.ts";
 import {
 	CachedContainer,
-	claudeRows,
 	limitComponentLines,
-	prefixedLines,
 	prefixedText,
 	railComponent,
 	renderArguments,
@@ -48,15 +46,9 @@ import {
 	renderToolCall,
 	styleMultiline,
 } from "./compact-tools-layout.ts";
-import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_OUTPUT_ROWS, CLAUDE_WRITE_ROWS, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
-import { ToolGroupController } from "./compact-tools-grouping.ts";
 import { chromePainter, paintIndicator } from "./compact-tools-palette.ts";
 import { ProgressController } from "./compact-tools-progress.ts";
-import { showReleaseNotice } from "./compact-tools-release.ts";
 import { ToolRuntime } from "./compact-tools-runtime.ts";
-import { SilentModeController } from "./compact-tools-silent.ts";
-import { ThinkingCycleController } from "./compact-tools-thinking.ts";
-import { ViewportKeeper } from "./compact-tools-viewport.ts";
 import {
 	SUPPORTED_TOOL_SET,
 	type BuiltInDefinition,
@@ -68,8 +60,6 @@ import {
 
 /** Context lines kept around each change while an edit result is collapsed. */
 const PREVIEW_DIFF_CONTEXT_LINES = 1;
-/** Claude Code sets what a call returned under the "⎿" rather than beside a rail. */
-const CLAUDE_INDENT = "   ";
 
 const runtime = new ToolRuntime();
 const registeredTools = new Set<CompactToolName>();
@@ -81,10 +71,6 @@ type AuthorResultRenderer = (expanded: boolean) => Component | undefined;
 
 function rowKind(name: string): RowKind {
 	return name === "bash" || name === "powershell" ? "shell" : SUPPORTED_TOOL_SET.has(name) ? "file" : "custom";
-}
-
-function isClaude(): boolean {
-	return runtime.config.style === "claude";
 }
 
 function pathArgument(args: ToolArgs): string {
@@ -162,29 +148,12 @@ function renderControls(
 	return prefixedText(details, chrome(" └ "), "   ");
 }
 
-/** Arguments a one-line summary cannot show: objects, or lists of them. */
-function hasNestedArguments(args: ToolArgs): boolean {
-	return Object.values(args).some((value) => typeof value === "object" && value !== null
-		&& (!Array.isArray(value) || value.some((item) => typeof item === "object" && item !== null)));
-}
-
 /** The call line: a status dot, the tool, and what it was asked, then any arguments the line leaves out. */
 function renderRowCall(name: string, args: ToolArgs, theme: Theme, ctx: RenderContext): Component {
 	const state = runtime.syncRow(ctx, ctx.state.endedAt === undefined);
 	runtime.syncExpansion(state, ctx.expanded, name);
 	const kind = rowKind(name);
 	const container = new CachedContainer();
-	if (isClaude()) {
-		// Claude Code's call line: `⦁ Bash(npm test)`, `⦁ Update(src/app.ts)`.
-		const { label, argument } = claudeTitle(name, args, state.expanded === true);
-		const title = `${renderIndicator(theme, ctx, state)} ${theme.fg("toolTitle", theme.bold(label))}`
-			+ (argument ? styleMultiline(`(${argument})`, (line) => theme.fg("toolOutput", line)) : "");
-		// The title wraps rather than being cut to the row; only a very long command is shortened.
-		container.addChild(renderToolCall(title, undefined, theme));
-		// The title already lists plain arguments; only nested ones need the full view.
-		if (kind === "custom" && state.expanded && hasNestedArguments(args)) container.addChild(renderArguments(args, theme));
-		return container;
-	}
 	const title = `${renderIndicator(theme, ctx, state)} ${theme.fg("toolTitle", theme.bold(name))}`;
 	let details: string | undefined;
 	if (kind === "shell") {
@@ -249,101 +218,6 @@ function renderRowBody(
 	return renderOutput(output, theme, isError);
 }
 
-function claudeMoreLines(theme: Theme, hidden: number): string {
-	return chromePainter(theme)(`… +${hidden} ${hidden === 1 ? "line" : "lines"} (ctrl+o to expand)`);
-}
-
-/** Output previewed in rows the way Claude Code previews it, all of it once opened. */
-function claudeOutput(output: string, expanded: boolean, theme: Theme, isError: boolean, empty: string, firstPrefix: string): Component {
-	const normalized = normalizeLineEndings(output).trimEnd();
-	// Pi's bash reports an empty run as "(no output)"; Claude Code dims its own words for it.
-	const lines = !normalized || normalized === "(no output)"
-		? [chromePainter(theme)(empty)]
-		: normalized.split("\n").map((line) => theme.fg(isError ? "error" : "toolOutput", line));
-	return claudeRows(lines, firstPrefix, CLAUDE_INDENT, expanded ? undefined : CLAUDE_OUTPUT_ROWS,
-		(hidden) => claudeMoreLines(theme, hidden));
-}
-
-/**
- * What Claude Code draws beneath a finished call: an edit's every hunk, a write's
- * first rows, the author's view of a custom tool once opened, and otherwise
- * nothing until the row is opened.
- */
-function claudeBody(
-	name: string,
-	args: ToolArgs,
-	result: AgentToolResult<unknown>,
-	output: string,
-	expanded: boolean,
-	theme: Theme,
-	author: AuthorResultRenderer | undefined,
-): Component | undefined {
-	const path = pathArgument(args);
-	if (name === "edit") {
-		return renderCodeDiff(getEditPatch(result), getEditDiff(result), path, theme,
-			{ contextLines: CLAUDE_DIFF_CONTEXT_LINES, rail: CLAUDE_INDENT });
-	}
-	if (name === "write") {
-		const component = renderCodeView(output, path, theme, { rail: CLAUDE_INDENT });
-		return component && !expanded
-			? limitComponentLines(component, CLAUDE_WRITE_ROWS, theme, (hidden) => CLAUDE_INDENT + claudeMoreLines(theme, hidden))
-			: component;
-	}
-	// A command's output is already the result line itself.
-	const kind = rowKind(name);
-	if (!expanded || kind === "shell") return undefined;
-	if (kind === "custom") return author ? renderRowBody(name, args, result, output, true, theme, false, author) : undefined;
-	return renderFileBody(name, args, result, output, true, theme, false);
-}
-
-/**
- * Claude Code's result block: a "└" line saying what happened, or the output
- * itself for commands and custom tools, then any diff or code beneath it.
- */
-function renderClaudeResult(
-	name: string,
-	args: ToolArgs,
-	result: AgentToolResult<unknown>,
-	options: ToolRenderResultOptions,
-	theme: Theme,
-	isError: boolean,
-	expanded: boolean,
-	output: string,
-	author: AuthorResultRenderer | undefined,
-): Component {
-	const chrome = chromePainter(theme);
-	const container = new CachedContainer();
-	// One line under the call, wrapped rather than cut to the row.
-	const line = (text: string) => prefixedLines(text, chrome(" └ "), CLAUDE_INDENT, false);
-	if (options.isPartial) {
-		container.addChild(line(chrome("Running…")));
-		return container;
-	}
-	if (isError) {
-		const failure = claudeFailure(name, output);
-		// A command's output says why beneath its exit code; another tool's message is
-		// shortened to one line, and a click shows it whole in its place.
-		if (failure.detail) {
-			container.addChild(line(theme.fg("error", failure.headline)));
-			container.addChild(claudeOutput(failure.detail, expanded, theme, true, "", CLAUDE_INDENT));
-		} else if (expanded && output.trim()) {
-			container.addChild(claudeOutput(`Error: ${output.trim()}`, true, theme, true, "", chrome(" └ ")));
-		} else {
-			container.addChild(line(theme.fg("error", failure.headline)));
-		}
-		return container;
-	}
-	const body = claudeBody(name, args, result, output, expanded, theme, author);
-	// The author's view already shows a custom tool's output, so the line above it only counts it.
-	const outcome = body && rowKind(name) === "custom"
-		? formatResultLineSummary(name, args, result, output) ?? "Done"
-		: claudeOutcome(name, args, result, output, (value) => theme.bold(value));
-	if (outcome !== undefined) container.addChild(line(theme.fg("toolOutput", outcome)));
-	else container.addChild(claudeOutput(output, expanded, theme, false, rowKind(name) === "shell" ? "(No output)" : "(No content)", chrome(" └ ")));
-	if (body) container.addChild(body);
-	return container;
-}
-
 /**
  * The result under a call: a preview or the whole of it when shown, and a status
  * line with how long it took and how much it returned. An unchanged result reuses
@@ -364,29 +238,23 @@ function renderRowResult(
 	const output = kind === "file" ? getFileOutput(name, ctx.args, result, ctx.isError) : getTextResult(result);
 	const hasEditDiff = name === "edit" && getEditDiff(result).length > 0;
 	runtime.setResultAvailable(state, name, hasEditDiff || output.length > 0 || author !== undefined);
-	let component: Component;
-	if (isClaude()) {
-		component = renderClaudeResult(name, ctx.args, result, options, theme, ctx.isError, state.expanded === true, output, author);
-	} else {
-		if (!options.isPartial && !state.resultLineSummaryComputed) {
-			// A custom tool with no text has nothing to count.
-			state.resultLineSummary = kind === "custom" && !output ? undefined : formatResultLineSummary(name, ctx.args, result, output);
-			state.resultLineSummaryComputed = true;
-		}
-		const container = new CachedContainer();
-		if (state.expanded || state.preview) {
-			const body = renderRowBody(name, ctx.args, result, output, state.expanded === true, theme, ctx.isError, author);
-			if (body) container.addChild(state.expanded ? body : limitComponentLines(body, runtime.config.previewLines, theme));
-		}
-		// A failed row whose output is hidden gets its reason on the status line. When
-		// the output shows, it already says why, and repeating it only doubles the error.
-		const failureReason = ctx.isError && !state.expanded && !state.preview ? summarizeFailure(name, output) : undefined;
-		container.addChild(renderControls(theme, state, options.isPartial, ctx.isError, failureReason,
-			name === "edit" ? countEditChanges(result) : undefined));
-		component = container;
+	if (!options.isPartial && !state.resultLineSummaryComputed) {
+		// A custom tool with no text has nothing to count.
+		state.resultLineSummary = kind === "custom" && !output ? undefined : formatResultLineSummary(name, ctx.args, result, output);
+		state.resultLineSummaryComputed = true;
 	}
+	const container = new CachedContainer();
+	if (state.expanded || state.preview) {
+		const body = renderRowBody(name, ctx.args, result, output, state.expanded === true, theme, ctx.isError, author);
+		if (body) container.addChild(state.expanded ? body : limitComponentLines(body, runtime.config.previewLines, theme));
+	}
+	// A failed row whose output is hidden gets its reason on the status line. When
+	// the output shows, it already says why, and repeating it only doubles the error.
+	const failureReason = ctx.isError && !state.expanded && !state.preview ? summarizeFailure(name, output) : undefined;
+	container.addChild(renderControls(theme, state, options.isPartial, ctx.isError, failureReason,
+		name === "edit" ? countEditChanges(result) : undefined));
 	rememberResult(state, result, options, ctx.isError);
-	return component;
+	return container;
 }
 
 /**
@@ -418,7 +286,7 @@ function createCustomRenderers(name: string, author: ToolDefinition<any, any, an
 function resolveCustomRow(row: ToolRow): RowRenderers | undefined {
 	const customTools = runtime.config.custom_tools;
 	// Built-ins are governed by `tools`: ones left out keep Pi's own renderer.
-	if (runtime.config.style === "off" || !customTools.enabled || registeredTools.has(row.toolName as CompactToolName)) return undefined;
+	if (!customTools.enabled || registeredTools.has(row.toolName as CompactToolName)) return undefined;
 	if (customTools.exclude.includes(row.toolName)) return undefined;
 	return createCustomRenderers(row.toolName, row.toolDefinition);
 }
@@ -445,9 +313,8 @@ function registerCompactTool(pi: ExtensionAPI, definition: BuiltInDefinition): v
 	} as ToolDefinition<any, any, RowState>);
 }
 
-/** Off leaves every tool with Pi's own renderer. */
 function compactedTools(): CompactToolName[] {
-	return runtime.config.style === "off" ? [] : runtime.config.tools;
+	return runtime.config.tools;
 }
 
 function registerTools(pi: ExtensionAPI, cwd: string): void {
@@ -483,11 +350,7 @@ export default function compactTools(pi: ExtensionAPI): void {
 	registeredConfiguration = undefined;
 	registeredTools.clear();
 
-	const thinkingCycle = new ThinkingCycleController(pi);
 	const progress = new ProgressController(pi);
-	const viewport = new ViewportKeeper();
-	const silent = new SilentModeController(pi, showReleaseNotice);
-	const groups = new ToolGroupController(runtime);
 	const customRowsAvailable = installToolRowPatch();
 	setRowResolver(resolveCustomRow);
 	let customRowsWarned = false;
@@ -497,34 +360,20 @@ export default function compactTools(pi: ExtensionAPI): void {
 	pi.on("session_start", (event, ctx) => {
 		if (event.reason !== "reload") runtime.clearTimings();
 		configure(pi, ctx.cwd, ctx.isProjectTrusted());
-		if (ctx.mode === "tui" && runtime.config.style !== "off") {
-			// First, so its input listener sees relayout keys before the thinking controller consumes them.
-			viewport.bind(ctx);
+		if (ctx.mode === "tui") {
 			progress.bind(ctx);
-			thinkingCycle.bind(ctx);
-			silent.bind(ctx, runtime.config.mode, event.reason === "reload");
-			groups.bind(ctx);
-			if (!silent.isEnabled()) showReleaseNotice(ctx);
 			if (runtime.config.custom_tools.enabled && !customRowsAvailable && !customRowsWarned) {
 				customRowsWarned = true;
 				ctx.ui.notify("Compact rendering for custom tools is unavailable in this version of Pi", "warning");
 			}
 		} else {
-			viewport.dispose();
 			progress.dispose();
-			thinkingCycle.dispose();
-			silent.dispose();
-			groups.dispose();
 		}
 	});
 	pi.on("tool_execution_start", (event) => runtime.noteExecutionStart(event.toolCallId));
 	pi.on("tool_execution_end", (event) => runtime.noteExecutionEnd(event.toolCallId));
 	pi.on("session_shutdown", (event) => {
-		thinkingCycle.dispose();
 		progress.dispose();
-		silent.dispose();
-		groups.dispose();
-		viewport.dispose();
 		runtime.reset(event.reason !== "reload");
 	});
 }

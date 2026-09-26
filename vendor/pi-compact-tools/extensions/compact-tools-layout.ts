@@ -4,7 +4,6 @@ import {
 	Container,
 	sliceByColumn,
 	stripTerminalSequences,
-	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
@@ -87,47 +86,7 @@ export function prefixedText(text: string, firstPrefix: string, continuationPref
 	});
 }
 
-/**
- * Lines under a tree prefix. With `truncate`, each keeps to one row and ends in an
- * ellipsis, the way Claude Code previews; otherwise each wraps in full. Lines are
- * handled one by one, so the indentation that output starts with survives.
- */
-export function prefixedLines(text: string, firstPrefix: string, continuationPrefix: string, truncate: boolean): Component {
-	const prefixWidth = Math.max(visibleWidth(firstPrefix), visibleWidth(continuationPrefix));
-	const lines = text.replace(/\t/g, "   ").split("\n");
-	return new CachedComponent((width) => {
-		const available = Math.max(1, width - prefixWidth);
-		const rows = truncate
-			? lines.map((line) => truncateToWidth(line, available, "…"))
-			: lines.flatMap((line) => hardWrapTextWithAnsi(line, available));
-		return rows.map((row, index) => `${index === 0 ? firstPrefix : continuationPrefix}${row}`);
-	});
-}
 
-/**
- * Output as Claude Code previews it. Each line is wrapped to the width, and rows
- * rather than lines are counted: collapsed, `maxRows` show, all of them when only
- * one more would be hidden, and then `more(hidden)`. Claude Code wraps ten
- * columns short of the terminal, so previews break where its own do.
- */
-export function claudeRows(
-	lines: readonly string[],
-	firstPrefix: string,
-	continuationPrefix: string,
-	maxRows: number | undefined,
-	more: (hidden: number) => string,
-): Component {
-	const prefixWidth = Math.max(visibleWidth(firstPrefix), visibleWidth(continuationPrefix));
-	return new CachedComponent((width) => {
-		const available = Math.max(1, width - prefixWidth);
-		const wrapWidth = maxRows === undefined ? available : Math.min(available, Math.max(width - 10, 10));
-		let rows = lines.flatMap((line) => hardWrapTextWithAnsi(line, wrapWidth).map((row) => row.trimEnd()));
-		if (maxRows !== undefined && rows.length > maxRows + 1) {
-			rows = [...rows.slice(0, maxRows), more(rows.length - maxRows)];
-		}
-		return rows.map((row, index) => `${index === 0 ? firstPrefix : continuationPrefix}${row}`);
-	});
-}
 
 export function hardWrapTextWithAnsi(text: string, width: number): string[] {
 	const safeWidth = Math.max(1, width);

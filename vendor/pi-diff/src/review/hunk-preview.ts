@@ -159,7 +159,6 @@ function getBorderBar(): string {
 let DIVIDER = `${FG_RULE}${RST}`;
 const ESC_RE = "\u001b";
 const ANSI_RE = new RegExp(`${ESC_RE}\\[[0-9;]*m`, "g");
-const ANSI_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([^m]*)m`, "g");
 const ANSI_PARAM_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([0-9;]*)m`, "g");
 const BG_DEFAULT = "\x1b[49m";
 let BG_BASE = BG_DEFAULT;
@@ -724,6 +723,24 @@ function plainWordDiff(oldText: string, newText: string): { old: string; new: st
 	return { old: oldOutput, new: newOutput };
 }
 
+/** Lines skipped between the previous rendered line and the next hunk. */
+function skippedLines(
+	lines: ParsedDiff["lines"],
+	sepIndex: number,
+	lastOld: number | null,
+	lastNew: number | null,
+): number {
+	if (lastOld === null && lastNew === null) return 0;
+	for (let cursor = sepIndex + 1; cursor < lines.length; cursor++) {
+		const next = lines[cursor];
+		if (next.type === "sep") continue;
+		if (next.oldNum !== null && lastOld !== null) return next.oldNum - lastOld - 1;
+		if (next.newNum !== null && lastNew !== null) return next.newNum - lastNew - 1;
+		return 0;
+	}
+	return 0;
+}
+
 export async function renderUnified(
 	diff: ParsedDiff,
 	language: BundledLanguage | undefined,
@@ -758,6 +775,8 @@ export async function renderUnified(
 	let oldIndex = 0;
 	let newIndex = 0;
 	let index = 0;
+	let lastOld: number | null = null;
+	let lastNew: number | null = null;
 	const output: string[] = [];
 
 	function emitRow(
@@ -783,8 +802,15 @@ export async function renderUnified(
 	while (index < visible.length) {
 		const line = visible[index];
 		if (line.type === "sep") {
-			const label = sepLabelUnified(getSepStyle(), line.hunkMeta, line.newNum, line.content);
-			if (!label) {
+			const gap = skippedLines(visible, index, lastOld, lastNew);
+			if (gap > 0) {
+				const text = `${gap} unchanged line${gap === 1 ? "" : "s"}`;
+				output.push(`${BG_BASE}${" ".repeat(numberWidth + 3)}${FG_DIM}⋯ ${text}${BG_BASE}${" ".repeat(Math.max(0, codeWidth - text.length - 2))}${RST}`);
+				index++;
+				continue;
+			}
+			const label = sepLabelUnified(getSepStyle(), line.hunkMeta, null, line.content);
+			if (!label || !line.content) {
 				index++;
 				continue;
 			}
@@ -797,6 +823,8 @@ export async function renderUnified(
 			continue;
 		}
 		if (line.type === "ctx") {
+			lastOld = line.oldNum;
+			lastNew = line.newNum;
 			const highlight = oldHighlights[oldIndex] ?? line.content;
 			emitRow(line.newNum, " ", BG_BASE, colors.fgCtx, `${BG_BASE}${DIM}${highlight}`, BG_BASE);
 			oldIndex += 1;
@@ -824,34 +852,39 @@ export async function renderUnified(
 			index += 1;
 		}
 
-		const isPaired = deletions.length === 1 && additions.length === 1;
-		const wordDiff = isPaired ? wordDiffAnalysis(deletions[0].line.content, additions[0].line.content) : null;
-		const wordDiffBalanced = wordDiff && wordDiff.oldRanges.length > 0 && wordDiff.newRanges.length > 0;
-		if (isPaired && wordDiffBalanced && wordDiff.similarity >= WORD_DIFF_MIN_SIM && canHighlight) {
-			const deletionBody = injectBg(deletions[0].hl, wordDiff.oldRanges, BG_DEL, BG_DEL_W);
-			const additionBody = injectBg(additions[0].hl, wordDiff.newRanges, BG_ADD, BG_ADD_W);
-			emitRow(deletions[0].line.oldNum, "-", BG_GUTTER_DEL, colors.fgDel, deletionBody, BG_DEL);
-			emitRow(additions[0].line.newNum, "+", BG_GUTTER_ADD, colors.fgAdd, additionBody, BG_ADD);
-			continue;
+		for (const deletion of deletions) lastOld = deletion.line.oldNum ?? lastOld;
+		for (const addition of additions) lastNew = addition.line.newNum ?? lastNew;
+		const deletionBodies = deletions.map((deletion) =>
+			canHighlight ? injectBg(deletion.hl, [], BG_DEL, BG_DEL) : `${BG_DEL}${deletion.line.content}`,
+		);
+		const additionBodies = additions.map((addition) =>
+			canHighlight ? injectBg(addition.hl, [], BG_ADD, BG_ADD) : `${BG_ADD}${addition.line.content}`,
+		);
+		// Pair removed and added lines in order so every changed pair gets word emphasis.
+		for (let pair = 0; pair < Math.min(deletions.length, additions.length); pair++) {
+			const deletion = deletions[pair];
+			const addition = additions[pair];
+			const wordDiff = wordDiffAnalysis(deletion.line.content, addition.line.content);
+			if (!wordDiff.oldRanges.length || !wordDiff.newRanges.length || wordDiff.similarity < WORD_DIFF_MIN_SIM) continue;
+			if (canHighlight) {
+				deletionBodies[pair] = injectBg(deletion.hl, wordDiff.oldRanges, BG_DEL, BG_DEL_W);
+				additionBodies[pair] = injectBg(addition.hl, wordDiff.newRanges, BG_ADD, BG_ADD_W);
+			} else {
+				const plain = plainWordDiff(deletion.line.content, addition.line.content);
+				deletionBodies[pair] = `${BG_DEL}${plain.old}`;
+				additionBodies[pair] = `${BG_ADD}${plain.new}`;
+			}
 		}
-		if (isPaired && wordDiffBalanced && wordDiff.similarity >= WORD_DIFF_MIN_SIM && !canHighlight) {
-			const plain = plainWordDiff(deletions[0].line.content, additions[0].line.content);
-			emitRow(deletions[0].line.oldNum, "-", BG_GUTTER_DEL, colors.fgDel, `${BG_DEL}${plain.old}`, BG_DEL);
-			emitRow(additions[0].line.newNum, "+", BG_GUTTER_ADD, colors.fgAdd, `${BG_ADD}${plain.new}`, BG_ADD);
-			continue;
-		}
-		for (const deletion of deletions) {
-			const body = canHighlight ? injectBg(deletion.hl, [], BG_DEL, BG_DEL) : `${BG_DEL}${deletion.line.content}`;
-			emitRow(deletion.line.oldNum, "-", BG_GUTTER_DEL, colors.fgDel, body, BG_DEL);
-		}
-		for (const addition of additions) {
-			const body = canHighlight ? injectBg(addition.hl, [], BG_ADD, BG_ADD) : `${BG_ADD}${addition.line.content}`;
-			emitRow(addition.line.newNum, "+", BG_GUTTER_ADD, colors.fgAdd, body, BG_ADD);
-		}
+		deletions.forEach((deletion, row) =>
+			emitRow(deletion.line.oldNum, "-", BG_GUTTER_DEL, colors.fgDel, deletionBodies[row], BG_DEL),
+		);
+		additions.forEach((addition, row) =>
+			emitRow(addition.line.newNum, "+", BG_GUTTER_ADD, colors.fgAdd, additionBodies[row], BG_ADD),
+		);
 	}
 
 	if (diff.lines.length > visible.length) {
-		output.push(`${BG_BASE}${FG_DIM}  … ${diff.lines.length - visible.length} more lines${RST}`);
+		output.push(`${BG_BASE}${FG_DIM}  … ${diff.lines.length - visible.length} more lines (ctrl+o to expand)${RST}`);
 	}
 	return output.join("\n");
 }

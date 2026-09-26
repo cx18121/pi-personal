@@ -516,7 +516,6 @@ function stripes(w: number, _rowOffset: number): string {
 let DIVIDER = `${FG_RULE}${RST}`;
 const ESC_RE = "\u001b";
 const ANSI_RE = new RegExp(`${ESC_RE}\\[[0-9;]*m`, "g");
-const ANSI_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([^m]*)m`, "g");
 const ANSI_PARAM_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([0-9;]*)m`, "g");
 const BG_DEFAULT = "\x1b[49m"; // reset to terminal default background
 let BG_BASE = BG_DEFAULT; // neutral card bg — updated from theme toolPendingBg
@@ -1655,7 +1654,7 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 			invalidate: ctx.invalidate,
 			key: (width: number) => {
 				const headerKey = frame?.omitHeader ? "" : header(width);
-				return `${keyPrefix}:${themeKey}:${width}:${headerKey}:${diff.lines.length}:${language ?? ""}:${frame?.omitHeader ? "oh" : "h"}:${frame?.headerLeftPad ?? 0}:${frame?.topPad ?? 0}:${frame?.bottomPad ?? 0}:${frame?.previewBottomPad ?? 0}:${frame?.compactGutter ? "cg" : "rg"}:${frame?.bodyLeftPad ?? 0}`;
+				return `${keyPrefix}:${themeKey}:${width}:${headerKey}:${diff.lines.length}:${maxLines}:${language ?? ""}:${frame?.omitHeader ? "oh" : "h"}:${frame?.headerLeftPad ?? 0}:${frame?.topPad ?? 0}:${frame?.bottomPad ?? 0}:${frame?.previewBottomPad ?? 0}:${frame?.compactGutter ? "cg" : "rg"}:${frame?.bodyLeftPad ?? 0}`;
 			},
 			render: async (width: number) =>
 				joinHeaderBody(
@@ -1826,7 +1825,7 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 			}
 			const d = result.details;
 			if (d?._type === "diff") {
-				setDiffPreviewTask(text, "wd", "", d.diff, d.language, MAX_RENDER_LINES, theme, ctx, {
+				setDiffPreviewTask(text, "wd", "", d.diff, d.language, _opt?.expanded ? d.diff.lines.length : MAX_RENDER_LINES, theme, ctx, {
 					omitHeader: true,
 					previewBottomPad: 0,
 					compactGutter: true,
@@ -2033,7 +2032,7 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 			}
 			const d = result.details;
 			if (d?._type === "editInfo" && d.diff) {
-				setDiffPreviewTask(text, "ed", "", d.diff, d.language, MAX_PREVIEW_LINES, theme, ctx, {
+				setDiffPreviewTask(text, "ed", "", d.diff, d.language, _opt?.expanded ? d.diff.lines.length : MAX_PREVIEW_LINES, theme, ctx, {
 					omitHeader: true,
 					previewBottomPad: EDIT_DIFF_RESULT_FRAME.previewBottomPad,
 					compactGutter: true,
@@ -2045,7 +2044,7 @@ export default async function diffRendererExtension(pi: ExtensionAPI): Promise<v
 			if (d?._type === "multiEditInfo") {
 				const { editCount, diffLineCount, diff, language } = d;
 				if (diff) {
-					setDiffPreviewTask(text, "me", "", diff, language, MAX_PREVIEW_LINES, theme, ctx, {
+					setDiffPreviewTask(text, "me", "", diff, language, _opt?.expanded ? diff.lines.length : MAX_PREVIEW_LINES, theme, ctx, {
 						omitHeader: true,
 						previewBottomPad: EDIT_DIFF_RESULT_FRAME.previewBottomPad,
 						compactGutter: true,

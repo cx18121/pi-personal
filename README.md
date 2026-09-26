@@ -35,6 +35,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 ## Bundled integrations
 
 - [`vendor/pi-memory`](vendor/pi-memory/README.md) stores global and project memory in local Markdown. It provides search, topics, scratchpads, papercuts, safe deletion, and recovery without a database or hosted service.
+- [`vendor/pi-diff`](vendor/pi-diff/src/index.ts) renders `edit` and `write` results as syntax-highlighted diffs with red and green row backgrounds. It is a fork of [`@heyhuynhgiabuu/pi-diff`](https://github.com/buddingnewinsights/pi-diff) 0.9.1 with two changes. [`src/shiki.ts`](vendor/pi-diff/src/shiki.ts) loads Shiki themes and grammars statically with the JavaScript regex engine, because Pi's compiled runtime cannot resolve Shiki's lazy imports and the upstream package silently renders uncolored code. Its `apply_patch` tool is disabled by default.
 - [`vendor/pi-paster`](vendor/pi-paster/README.md) turns pasted or dropped images into Pi attachments. It also adds image previews and `/image-compress` for replacing old image blocks with text summaries in a copied session.
 
 ## Support files

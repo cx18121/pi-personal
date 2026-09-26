@@ -33,6 +33,14 @@ const BTW_SYSTEM_PROMPT = [
   "Answer directly and keep the side conversation focused.",
 ].join(" ");
 
+// Claude may end a turn after only thinking about a tool call when the main
+// conversation was mid-task, so the reminder sits next to the question. It also
+// carries the side-conversation rules when the main system prompt is reused.
+const BTW_QUESTION_REMINDER = [
+  "This is a private side question while the main agent's work continues separately.",
+  "Answer it in text from the conversation above. Tools are unavailable here.",
+].join(" ");
+
 const SIDE_SYSTEM_PROMPT = [
   "You are an interactive side session forked from another Pi conversation.",
   "You share its working directory and may use your normal tools.",
@@ -66,6 +74,44 @@ type DrawerRuntime = {
   closed?: boolean;
 };
 
+type AnthropicPayload = Record<string, unknown> & { messages: unknown[] };
+
+const isAnthropicPayload = (value: unknown): value is AnthropicPayload =>
+  typeof value === "object" && value !== null && Array.isArray((value as { messages?: unknown }).messages);
+
+const withoutCacheControl = (value: unknown) =>
+  JSON.stringify(value, (key, nested) => (key === "cache_control" ? undefined : nested));
+
+// Opus and Fable carry effort in system messages. Trailing ones set the active effort.
+const isEffortMarker = (message: unknown) =>
+  typeof message === "object" && message !== null && (message as { role?: unknown }).role === "system";
+
+const splitTrailingEffort = (messages: unknown[]) => {
+  const body = [...messages];
+  const effort: unknown[] = [];
+  while (body.length > 0 && isEffortMarker(body.at(-1))) effort.unshift(body.pop());
+  return { body, effort };
+};
+
+/**
+ * Replays the main agent's last Anthropic request so the side question reads
+ * its prompt cache. System prompt, tools, and thinking settings must match it
+ * exactly. Messages added since that request come from the fresh request.
+ * `tool_choice: none` blocks tool calls without invalidating the cache.
+ */
+export const reuseMainRequest = (main: AnthropicPayload, fresh: AnthropicPayload, question: string) => {
+  const { body: prefix, effort } = splitTrailingEffort(main.messages);
+  const { body: freshMessages } = splitTrailingEffort(fresh.messages);
+  const lastMain = withoutCacheControl(prefix.at(-1));
+  const matched = freshMessages.findLastIndex((message) => withoutCacheControl(message) === lastMain);
+  const tail =
+    matched === -1
+      ? [{ role: "user", content: [{ type: "text", text: question }] }]
+      : freshMessages.slice(matched + 1).map((message) => JSON.parse(withoutCacheControl(message)));
+
+  return { ...main, messages: [...prefix, ...tail, ...effort], tool_choice: { type: "none" } };
+};
+
 const extractResponseText = (content: ReadonlyArray<{ type: string; text?: string }>) =>
   content
     .filter((part) => part.type === "text" && typeof part.text === "string")
@@ -82,9 +128,11 @@ const formatBtwQuestion = (turns: BtwTurn[], question: string) => {
     .map((turn) => `User: ${turn.question}\nAssistant: ${turn.answer}`)
     .join("\n\n");
 
-  return previous
+  const current = previous
     ? `Earlier side conversation:\n\n${previous}\n\nCurrent question:\n${question}`
     : question;
+
+  return `${current}\n\n${BTW_QUESTION_REMINDER}`;
 };
 
 const formatSideContinuation = (turns: BtwTurn[]) => {
@@ -294,6 +342,7 @@ class BtwDrawer implements Component, Focusable {
 
 export default function (pi: ExtensionAPI) {
   let btwTurns: BtwTurn[] = [];
+  let lastMainRequest: AnthropicPayload | undefined;
   let activeBtwController: AbortController | undefined;
   let drawerRuntime: DrawerRuntime | undefined;
   let thinkingFrame = 0;
@@ -575,9 +624,10 @@ export default function (pi: ExtensionAPI) {
     if (!model) return { kind: "failed", message: "No model selected" };
 
     const context = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
+    const questionText = formatBtwQuestion(btwTurns, question);
     const userMessage: UserMessage = {
       role: "user",
-      content: [{ type: "text", text: formatBtwQuestion(btwTurns, question) }],
+      content: [{ type: "text", text: questionText }],
       timestamp: Date.now(),
     };
 
@@ -589,26 +639,44 @@ export default function (pi: ExtensionAPI) {
       if (!provider) return { kind: "failed", message: `Provider not found: ${model.provider}` };
 
       const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
-      const stream = provider.stream(
-        requestModel,
-        { systemPrompt: BTW_SYSTEM_PROMPT, messages: [...convertToLlm(context.messages), userMessage] },
-        { signal, apiKey: auth.apiKey, headers: auth.headers, env: auth.env },
-      );
-      let streamedText = "";
+      const messages = [...convertToLlm(context.messages), userMessage];
+      const mainRequest = lastMainRequest?.model === model.id ? lastMainRequest : undefined;
+      const request = async () => {
+        const stream = provider.stream(
+          requestModel,
+          { systemPrompt: BTW_SYSTEM_PROMPT, messages },
+          {
+            signal,
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            env: auth.env,
+            onPayload: mainRequest
+              ? (payload: unknown) => (isAnthropicPayload(payload) ? reuseMainRequest(mainRequest, payload, questionText) : undefined)
+              : undefined,
+          },
+        );
+        let streamedText = "";
 
-      for await (const event of stream) {
-        if (event.type !== "text_delta") continue;
-        streamedText += event.delta;
-        onText(streamedText);
-      }
+        for await (const event of stream) {
+          if (event.type !== "text_delta") continue;
+          streamedText += event.delta;
+          onText(streamedText);
+        }
 
-      const response = await stream.result();
+        const response = await stream.result();
+        return { response, text: extractResponseText(response.content) || streamedText.trim() };
+      };
+
+      let { response, text } = await request();
+      // A thinking-only reply is an occasional sampling miss, so retry once.
+      if (!text && response.stopReason === "stop") ({ response, text } = await request());
+
       if (response.stopReason === "aborted") return { kind: "cancelled" };
       if (response.stopReason === "error") {
         return { kind: "failed", message: response.errorMessage ?? "BTW request failed" };
       }
 
-      const answer = extractResponseText(response.content) || streamedText || "(No text response)";
+      const answer = text || "(No text response)";
       return {
         kind: "complete",
         answer,
@@ -771,7 +839,14 @@ export default function (pi: ExtensionAPI) {
     });
   };
 
+  pi.on("before_provider_request", (event, ctx) => {
+    if (ctx.model?.api === "anthropic-messages" && isAnthropicPayload(event.payload)) {
+      lastMainRequest = event.payload;
+    }
+  });
+
   pi.on("session_shutdown", (_event, ctx) => {
+    lastMainRequest = undefined;
     closeDrawer();
     ctx.ui.setWidget("side-session-launch", undefined);
   });

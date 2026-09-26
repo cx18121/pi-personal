@@ -13,7 +13,6 @@ const INLINE_ARGUMENT_TOOLS = new Set(["grep", "find", "ls"]);
 function omitArgument(name: string, key: string): boolean {
 	if (key === "path" || key === "file_path") return true;
 	if (name === "read" && (key === "offset" || key === "limit")) return true;
-	if (name === "write" && key === "content") return true;
 	return (name === "grep" || name === "find") && key === "pattern";
 }
 
@@ -68,7 +67,7 @@ export function summarizeCustomArguments(args: ToolArgs): string {
 }
 
 export function getArgumentDetails(name: string, args: ToolArgs): ToolArgs {
-	if (name === "edit" || INLINE_ARGUMENT_TOOLS.has(name)) return {};
+	if (INLINE_ARGUMENT_TOOLS.has(name)) return {};
 	return collectArgumentDetails(name, args);
 }
 
@@ -112,22 +111,14 @@ export function shellSegments(command: string): string[] {
 	return segments;
 }
 
-function shellWords(command: string, powershell = false): string[] {
+function shellWords(command: string): string[] {
 	const words: string[] = [];
 	let current = "";
 	let quote: "'" | '"' | undefined;
 	const input = command.trim();
 	for (let index = 0; index < input.length; index++) {
 		const character = input[index]!;
-		if (powershell && character === "`" && quote !== "'") {
-			const next = input[index + 1];
-			if (next !== undefined) {
-				current += next;
-				index++;
-			}
-			continue;
-		}
-		if (!powershell && character === "\\" && quote !== "'") {
+		if (character === "\\" && quote !== "'") {
 			const next = input[index + 1];
 			if (next === undefined) {
 				current += "\\";
@@ -171,17 +162,11 @@ const SEARCH_OPTIONS_WITH_VALUES = new Set([
 	"--binary-files", "--exclude", "--exclude-from", "--exclude-dir", "--include", "--label",
 ]);
 
-function searchPattern(executable: string, words: string[]): string | undefined {
+function searchPattern(words: string[]): string | undefined {
 	const args = words.slice(1);
 	for (let index = 0; index < args.length; index++) {
 		const argument = args[index] ?? "";
 		const lower = argument.toLowerCase();
-		if (executable === "select-string") {
-			if (lower === "-pattern") return args[index + 1];
-			if (lower.startsWith("-pattern:")) return argument.slice(argument.indexOf(":") + 1);
-			if (!argument.startsWith("-")) return argument;
-			continue;
-		}
 		if (lower === "-e" || lower === "--regexp") return args[index + 1];
 		if (lower.startsWith("--regexp=")) return argument.slice(argument.indexOf("=") + 1);
 		if (/^-e.+/u.test(argument)) return argument.slice(2);
@@ -197,8 +182,8 @@ function searchPattern(executable: string, words: string[]): string | undefined 
 	return undefined;
 }
 
-function summarizeTextSearch(executable: string, words: string[]): string {
-	const pattern = searchPattern(executable, words);
+function summarizeTextSearch(words: string[]): string {
+	const pattern = searchPattern(words);
 	return pattern === undefined ? "Search text" : `Search text ${JSON.stringify(pattern)}`;
 }
 
@@ -291,13 +276,13 @@ function summarizeFileOperation(executable: string, words: string[]): string | u
 }
 
 /** A calm collapsed label that describes intent while retaining primary command targets. */
-export function summarizeShellCommand(name: string, command: string): string {
+export function summarizeShellCommand(command: string): string {
 	const allSegments = shellSegments(normalizeLineEndings(command));
 	const segments = allSegments.filter((segment) => !/^\s*(?:cd|pushd|popd)\b/iu.test(segment));
 	const primary = segments[0] ?? allSegments[0] ?? "";
-	if (!primary) return name === "powershell" ? "Prepare PowerShell command" : "Prepare shell command";
+	if (!primary) return "Prepare shell command";
 
-	const words = shellWords(primary, name === "powershell");
+	const words = shellWords(primary);
 	while (words.length > 0) {
 		if (/^[A-Za-z_][A-Za-z\d_]*=.*/u.test(words[0] ?? "")
 			|| ["command", "env", "sudo", "time"].includes((words[0] ?? "").toLowerCase())) {
@@ -306,7 +291,7 @@ export function summarizeShellCommand(name: string, command: string): string {
 		}
 		break;
 	}
-	const executable = (words[0] ?? "").replace(/^.*[\\/]/u, "").replace(/\.(?:cmd|exe|ps1)$/iu, "").toLowerCase();
+	const executable = (words[0] ?? "").replace(/^.*[\\/]/u, "").toLowerCase();
 	const action = (words[1] ?? "").toLowerCase();
 	const subject = words[2] ?? "";
 
@@ -325,21 +310,21 @@ export function summarizeShellCommand(name: string, command: string): string {
 		summary = "Review commit history";
 	} else if (executable === "git" && ["fetch", "pull", "push", "clone"].includes(action)) {
 		summary = `${action[0]!.toUpperCase()}${action.slice(1)} repository`;
-	} else if (["rg", "grep", "select-string"].includes(executable)) {
-		summary = summarizeTextSearch(executable, words);
-	} else if (["find", "fd", "get-childitem", "ls", "dir"].includes(executable)) {
+	} else if (["rg", "grep"].includes(executable)) {
+		summary = summarizeTextSearch(words);
+	} else if (["find", "fd", "ls"].includes(executable)) {
 		summary = summarizeFileDiscovery(executable, words);
 	} else if (summarizeFileOperation(executable, words)) {
 		summary = summarizeFileOperation(executable, words)!;
 	} else if (["tsc", "mypy", "pyright"].includes(executable)) {
 		summary = "Check types";
-	} else if (["jest", "vitest", "pytest", "invoke-pester"].includes(executable)) {
+	} else if (["jest", "vitest", "pytest"].includes(executable)) {
 		summary = "Run tests";
 	} else if (executable) {
 		const display = executable.replace(/[-_]+/gu, " ");
 		summary = `Run ${display}`;
 	} else {
-		summary = name === "powershell" ? "Run PowerShell command" : "Run shell command";
+		summary = "Run shell command";
 	}
 
 	const remainingSteps = Math.max(0, segments.length - 1);
@@ -364,7 +349,7 @@ export function summarizeFailure(name: string, output: string): string | undefin
 		.filter(Boolean);
 	if (lines.length === 0) return undefined;
 	const last = lines[lines.length - 1]!;
-	const shellStatus = (name === "bash" || name === "powershell")
+	const shellStatus = name === "bash"
 		&& /^Command (?:exited with code \d+|timed out.*|aborted|terminated.*)$/iu.test(last)
 		? last
 		: undefined;
@@ -401,37 +386,9 @@ function countTextLines(text: string): number {
 	return count;
 }
 
-export function getEditDiff(result: AgentToolResult<unknown>): string {
-	const diff = (result.details as ResultDetails | undefined)?.diff;
-	return typeof diff === "string" ? normalizeLineEndings(diff).trimEnd() : "";
-}
 
-export function getEditPatch(result: AgentToolResult<unknown>): string {
-	const patch = (result.details as ResultDetails | undefined)?.patch;
-	return typeof patch === "string" ? normalizeLineEndings(patch).trimEnd() : "";
-}
 
-/** Keep only the lines that the edit actually removed or added; discard context and ellipses. */
-export function getEditChanges(result: AgentToolResult<unknown>): string {
-	return getEditDiff(result)
-		.split("\n")
-		.filter((line) => line.startsWith("-") || line.startsWith("+"))
-		.join("\n")
-		.trimEnd();
-}
 
-/** How many lines an edit added and removed, counted from the diff Pi attaches to its result. */
-export function countEditChanges(result: AgentToolResult<unknown>): { added: number; removed: number } | undefined {
-	const diff = getEditDiff(result);
-	if (!diff) return undefined;
-	let added = 0;
-	let removed = 0;
-	for (const line of diff.split("\n")) {
-		if (line.startsWith("+")) added++;
-		else if (line.startsWith("-")) removed++;
-	}
-	return { added, removed };
-}
 
 const READ_FOOTER = /\n\n(\[(?:Showing lines |\d+ more lines in file\.)[^\n]*\])$/u;
 
@@ -460,18 +417,11 @@ function stripGeneratedFooter(name: string, text: string, details: ResultDetails
 
 export function formatResultLineSummary(
 	name: string,
-	args: ToolArgs,
 	result: AgentToolResult<unknown>,
 	output?: string,
 ): string | undefined {
 	const details = result.details as ResultDetails | undefined;
-	const text = name === "edit"
-		? getEditChanges(result)
-		: output ?? (name === "write"
-			? String(args.content ?? "")
-			: result.content.some((item) => item.type === "text")
-				? getTextResult(result)
-				: undefined);
+	const text = output ?? (result.content.some((item) => item.type === "text") ? getTextResult(result) : undefined);
 	if (text === undefined) return undefined;
 	const truncationLines = details?.truncation?.outputLines;
 	const lineCount = !details?.truncation?.firstLineExceedsLimit
@@ -483,14 +433,6 @@ export function formatResultLineSummary(
 	return `${lineCount} ${lineCount === 1 ? "line" : "lines"}`;
 }
 
-export function getFileOutput(
-	name: string,
-	args: ToolArgs,
-	result: AgentToolResult<unknown>,
-	isError: boolean,
-): string {
-	if (isError || name === "read" || name === "grep" || name === "find" || name === "ls") {
-		return getTextResult(result);
-	}
-	return name === "write" ? String(args.content ?? "") : "";
+export function getFileOutput(name: string, result: AgentToolResult<unknown>, isError: boolean): string {
+	return isError || name === "read" || name === "grep" || name === "find" || name === "ls" ? getTextResult(result) : "";
 }

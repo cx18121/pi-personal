@@ -11,14 +11,11 @@ const CONFIG_FILE = "compact-tools.json";
 type JsonObject = Record<string, unknown>;
 
 export const DEFAULT_CONFIG: CompactToolsConfig = {
-	tools: ["read", "write", "edit", "bash"],
+	tools: ["read", "grep", "find", "ls"],
 	previewLines: 10,
 	auto_compact: {
 		read: true,
-		write: true,
-		edit: false,
 		bash: true,
-		powershell: true,
 		grep: true,
 		find: true,
 		ls: true,

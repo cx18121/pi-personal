@@ -9,9 +9,6 @@
   "custom_tools": {
     "enabled": true,
     "auto_compact": true,
-    "exclude": [
-      "edit",
-      "write"
-    ]
+    "exclude": []
   }
 }

@@ -7,13 +7,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	createBashToolDefinition,
-	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
 	createLsToolDefinition,
-	createPowerShellToolDefinition,
 	createReadToolDefinition,
-	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { classifyCallStatus, formatDurationMs, normalizeLineEndings, type RowStatus } from "./compact-tools-core.ts";
@@ -21,11 +18,8 @@ import { loadConfig } from "./compact-tools-config.ts";
 import { installToolRowPatch, setRowResolver, type RowRenderers, type ToolRow } from "./compact-tools-custom.ts";
 import {
 	formatResultLineSummary,
-	countEditChanges,
 	getArgumentDetails,
 	getCallDetails,
-	getEditDiff,
-	getEditPatch,
 	getFileOutput,
 	getTextResult,
 	isReadTextResult,
@@ -40,14 +34,12 @@ import {
 	prefixedText,
 	railComponent,
 	renderArguments,
-	renderCodeDiff,
 	renderCodeView,
 	renderOutput,
 	renderToolCall,
 	styleMultiline,
 } from "./compact-tools-layout.ts";
 import { chromePainter, paintIndicator } from "./compact-tools-palette.ts";
-import { ProgressController } from "./compact-tools-progress.ts";
 import { ToolRuntime } from "./compact-tools-runtime.ts";
 import {
 	SUPPORTED_TOOL_SET,
@@ -58,8 +50,6 @@ import {
 	type ToolArgs,
 } from "./compact-tools-types.ts";
 
-/** Context lines kept around each change while an edit result is collapsed. */
-const PREVIEW_DIFF_CONTEXT_LINES = 1;
 
 const runtime = new ToolRuntime();
 const registeredTools = new Set<CompactToolName>();
@@ -70,7 +60,7 @@ type RowKind = "file" | "shell" | "custom";
 type AuthorResultRenderer = (expanded: boolean) => Component | undefined;
 
 function rowKind(name: string): RowKind {
-	return name === "bash" || name === "powershell" ? "shell" : SUPPORTED_TOOL_SET.has(name) ? "file" : "custom";
+	return name === "bash" ? "shell" : SUPPORTED_TOOL_SET.has(name) ? "file" : "custom";
 }
 
 function pathArgument(args: ToolArgs): string {
@@ -86,8 +76,7 @@ function callStatus(ctx: RenderContext, state: RowState): RowStatus {
 }
 
 function renderIndicator(theme: Theme, ctx: RenderContext, state: RowState): string {
-	const status = callStatus(ctx, state);
-	return paintIndicator(theme, status, runtime.syncIndicator(ctx.toolCallId, status === "running", () => ctx.invalidate()));
+	return paintIndicator(theme, callStatus(ctx, state));
 }
 
 function formatDuration(state: RowState): string | undefined {
@@ -127,22 +116,16 @@ function renderControls(
 	running: boolean,
 	isError: boolean,
 	failureReason?: string,
-	changes?: { added: number; removed: number },
 ): Component {
 	const duration = running ? undefined : formatDuration(state);
 	const status = running
-		? (duration ?? "Running")
+		? "Running…"
 		: `${isError ? "Failed" : "Done"}${duration ? ` in ${duration}` : ""}`;
 	// A failed row already reads as an error through its output color and Pi's row
 	// background, so the status word stays chrome rather than repeating that signal.
 	const chrome = chromePainter(theme);
 	let details = chrome(status);
 	if (failureReason && isError && !running) details += chrome(" · ") + theme.fg("error", failureReason);
-	// An edit reports what it changed the way a diff does: lines added and removed.
-	else if (changes && !running && !isError) {
-		details += chrome(" (") + theme.fg("toolDiffAdded", `+${changes.added}`) + chrome(" ")
-			+ theme.fg("toolDiffRemoved", `-${changes.removed}`) + chrome(")");
-	}
 	// A failed call produced no result worth counting; "(0 lines)" would only mislead.
 	else if (state.resultLineSummary && !running && !isError) details += chrome(` (${state.resultLineSummary})`);
 	return prefixedText(details, chrome(" └ "), "   ");
@@ -160,7 +143,7 @@ function renderRowCall(name: string, args: ToolArgs, theme: Theme, ctx: RenderCo
 		const command = normalizeLineEndings(typeof args.command === "string" ? args.command : "");
 		details = state.expanded
 			? styleMultiline(command || "…", (line) => theme.fg("toolOutput", line))
-			: theme.fg("toolOutput", summarizeShellCommand(name, command));
+			: theme.fg("toolOutput", summarizeShellCommand(command));
 	} else {
 		const summary = kind === "file" ? getCallDetails(name, args) : summarizeCustomArguments(args);
 		details = summary ? styleMultiline(summary, (line) => theme.fg("toolOutput", line)) : undefined;
@@ -171,28 +154,22 @@ function renderRowCall(name: string, args: ToolArgs, theme: Theme, ctx: RenderCo
 	return container;
 }
 
-/** A result body as code where it is code: numbered file text, or an edit's diff. */
+/** A result body as code where it is code: numbered file text. */
 function renderFileBody(
 	name: string,
 	args: ToolArgs,
 	result: AgentToolResult<unknown>,
 	output: string,
-	expanded: boolean,
 	theme: Theme,
 	isError: boolean,
 ): Component | undefined {
 	if (isError) return renderOutput(output, theme, isError);
 	const path = pathArgument(args);
-	if (name === "edit" && getEditDiff(result)) {
-		return renderCodeDiff(getEditPatch(result), getEditDiff(result), path, theme,
-			expanded ? {} : { contextLines: PREVIEW_DIFF_CONTEXT_LINES }) ?? renderOutput(output, theme, isError);
-	}
 	if (name === "read" && isReadTextResult(result)) {
 		const { body, footer } = splitReadFooter(output);
 		const startLine = typeof args.offset === "number" ? args.offset : 1;
 		return renderCodeView(body, path, theme, { startLine, footer }) ?? renderOutput(output, theme, isError);
 	}
-	if (name === "write") return renderCodeView(output, path, theme) ?? renderOutput(output, theme, isError);
 	return renderOutput(output, theme, isError);
 }
 
@@ -206,7 +183,7 @@ function renderRowBody(
 	isError: boolean,
 	author: AuthorResultRenderer | undefined,
 ): Component | undefined {
-	if (rowKind(name) !== "custom") return renderFileBody(name, args, result, output, expanded, theme, isError);
+	if (rowKind(name) !== "custom") return renderFileBody(name, args, result, output, theme, isError);
 	if (author) {
 		try {
 			const component = author(expanded);
@@ -235,12 +212,11 @@ function renderRowResult(
 	runtime.syncExpansion(state, ctx.expanded, name);
 	if (canReuseResult(state, result, options, ctx)) return ctx.lastComponent;
 	const kind = rowKind(name);
-	const output = kind === "file" ? getFileOutput(name, ctx.args, result, ctx.isError) : getTextResult(result);
-	const hasEditDiff = name === "edit" && getEditDiff(result).length > 0;
-	runtime.setResultAvailable(state, name, hasEditDiff || output.length > 0 || author !== undefined);
+	const output = kind === "file" ? getFileOutput(name, result, ctx.isError) : getTextResult(result);
+	runtime.setResultAvailable(state, name, output.length > 0 || author !== undefined);
 	if (!options.isPartial && !state.resultLineSummaryComputed) {
 		// A custom tool with no text has nothing to count.
-		state.resultLineSummary = kind === "custom" && !output ? undefined : formatResultLineSummary(name, ctx.args, result, output);
+		state.resultLineSummary = kind === "custom" && !output ? undefined : formatResultLineSummary(name, result, output);
 		state.resultLineSummaryComputed = true;
 	}
 	const container = new CachedContainer();
@@ -251,8 +227,7 @@ function renderRowResult(
 	// A failed row whose output is hidden gets its reason on the status line. When
 	// the output shows, it already says why, and repeating it only doubles the error.
 	const failureReason = ctx.isError && !state.expanded && !state.preview ? summarizeFailure(name, output) : undefined;
-	container.addChild(renderControls(theme, state, options.isPartial, ctx.isError, failureReason,
-		name === "edit" ? countEditChanges(result) : undefined));
+	container.addChild(renderControls(theme, state, options.isPartial, ctx.isError, failureReason));
 	rememberResult(state, result, options, ctx.isError);
 	return container;
 }
@@ -286,17 +261,15 @@ function createCustomRenderers(name: string, author: ToolDefinition<any, any, an
 function resolveCustomRow(row: ToolRow): RowRenderers | undefined {
 	const customTools = runtime.config.custom_tools;
 	// Built-ins are governed by `tools`: ones left out keep Pi's own renderer.
-	if (!customTools.enabled || registeredTools.has(row.toolName as CompactToolName)) return undefined;
+	// pi-diff owns edit and write rendering.
+	if (!customTools.enabled || row.toolName === "edit" || row.toolName === "write" || registeredTools.has(row.toolName as CompactToolName)) return undefined;
 	if (customTools.exclude.includes(row.toolName)) return undefined;
 	return createCustomRenderers(row.toolName, row.toolDefinition);
 }
 
 const toolFactories: Record<CompactToolName, (cwd: string) => BuiltInDefinition> = {
 	read: createReadToolDefinition,
-	write: createWriteToolDefinition,
-	edit: createEditToolDefinition,
 	bash: createBashToolDefinition,
-	powershell: createPowerShellToolDefinition,
 	grep: createGrepToolDefinition,
 	find: createFindToolDefinition,
 	ls: createLsToolDefinition,
@@ -350,7 +323,6 @@ export default function compactTools(pi: ExtensionAPI): void {
 	registeredConfiguration = undefined;
 	registeredTools.clear();
 
-	const progress = new ProgressController(pi);
 	const customRowsAvailable = installToolRowPatch();
 	setRowResolver(resolveCustomRow);
 	let customRowsWarned = false;
@@ -360,20 +332,14 @@ export default function compactTools(pi: ExtensionAPI): void {
 	pi.on("session_start", (event, ctx) => {
 		if (event.reason !== "reload") runtime.clearTimings();
 		configure(pi, ctx.cwd, ctx.isProjectTrusted());
-		if (ctx.mode === "tui") {
-			progress.bind(ctx);
-			if (runtime.config.custom_tools.enabled && !customRowsAvailable && !customRowsWarned) {
-				customRowsWarned = true;
-				ctx.ui.notify("Compact rendering for custom tools is unavailable in this version of Pi", "warning");
-			}
-		} else {
-			progress.dispose();
+		if (ctx.mode === "tui" && runtime.config.custom_tools.enabled && !customRowsAvailable && !customRowsWarned) {
+			customRowsWarned = true;
+			ctx.ui.notify("Compact rendering for custom tools is unavailable in this version of Pi", "warning");
 		}
 	});
 	pi.on("tool_execution_start", (event) => runtime.noteExecutionStart(event.toolCallId));
 	pi.on("tool_execution_end", (event) => runtime.noteExecutionEnd(event.toolCallId));
 	pi.on("session_shutdown", (event) => {
-		progress.dispose();
 		runtime.reset(event.reason !== "reload");
 	});
 }

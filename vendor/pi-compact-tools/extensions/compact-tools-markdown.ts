@@ -1,5 +1,5 @@
 import { highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
-import { languageFromPath } from "./compact-tools-language.ts";
+import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 
 type Fence = { char: string; length: number; language: string | undefined; start: number };
 
@@ -15,7 +15,7 @@ const INLINE = /(`+)(.+?)\1|\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*(?=\S)(.+?)\*\*|__(?
 function fenceLanguage(info: string): string | undefined {
 	const name = info.toLowerCase();
 	if (!name) return undefined;
-	return languageFromPath(`fence.${name}`) ?? name;
+	return getLanguageFromPath(`fence.${name}`) ?? name;
 }
 
 function highlightInline(text: string, theme: Theme): string {

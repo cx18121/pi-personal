@@ -128,14 +128,6 @@ function atBrightness(rgb: Rgb, target: number): Rgb {
 	return reached >= target - 0.5 ? rounded : interpolateRgb(rounded, WHITE, (target - reached) / (255 - reached));
 }
 
-/** Lift a color part of the way to maximum contrast, keeping its hue for as long as it can. */
-export function liftContrast(theme: Theme, rgb: Rgb, amount: number): Rgb {
-	const dark = isDarkTheme(theme);
-	const brightness = luminanceRgb(rgb) / 255;
-	const level = dark ? brightness : 1 - brightness;
-	const target = level + (1 - level) * amount;
-	return atBrightness(rgb, (dark ? target : 1 - target) * 255);
-}
 
 /**
  * Move a color until how far it stands off the theme background — 0 for invisible, 1 for
@@ -151,17 +143,4 @@ export function withContrast(theme: Theme, rgb: Rgb, minimum: number, maximum: n
 	return atBrightness(rgb, (dark ? target : 1 - target) * 255);
 }
 
-/**
- * Diff rows need a tint that reads on the terminal background without hijacking `toolSuccessBg`
- * and `toolErrorBg`, which Pi paints across the whole tool row.
- */
-export function diffTintRgb(theme: Theme, color: ThemeForeground, amount = 0.17): Rgb | undefined {
-	const rgb = themeColorRgb(theme, color);
-	if (!rgb) return undefined;
-	const base = isDarkTheme(theme) ? BLACK : WHITE;
-	return interpolateRgb(base, rgb, amount);
-}
 
-export function fillRgb(theme: Theme, color: Rgb, text: string): string {
-	return paintRgb(theme, color, text, 48);
-}

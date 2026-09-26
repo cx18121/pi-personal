@@ -78,7 +78,7 @@ describe("correction storage", () => {
 			requestEntryId: "answer",
 			assistantEntryId: "request",
 			correctionEntryId: "correction",
-		})).toThrow("is not a user message");
+		})).toThrow("ordered request");
 	});
 
 	test("groups evidence without authoring a proposal", () => {

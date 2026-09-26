@@ -148,6 +148,11 @@ function proposalLines(theme: CorrectionReviewTheme, item: CorrectionReviewItem 
 	}
 
 	addBlock("Summary", item.pattern.summary);
+	if (item.pattern.relatedPatternId) addBlock("Related item", item.pattern.relatedPatternId);
+	if (item.pattern.readiness) {
+		addBlock("Uncovered gap", item.pattern.readiness.gap);
+		addBlock("Worth changing", item.pattern.readiness.benefit);
+	}
 	addBlock(
 		item.pattern.intervention || item.pattern.eval ? "Proposed change" : "Next step",
 		item.pattern.intervention?.exactChange

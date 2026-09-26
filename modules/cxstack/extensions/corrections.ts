@@ -24,6 +24,7 @@ import {
 	appendCorrectionEvent,
 	CORRECTION_GROUPING_VERSION,
 	correctionState,
+	correctionEvidence,
 	correctionsFile,
 	createCorrectionCandidate,
 	extractCorrectionMarker,
@@ -34,6 +35,7 @@ import {
 	parseGroupingOutput,
 	readCorrectionEvents,
 	type CorrectionCandidate,
+	type CorrectionGroupingContext,
 	type CorrectionDecision,
 	type CorrectionInterpretation,
 	type CorrectionPattern,
@@ -47,14 +49,14 @@ const kernel = renderCxKernel(
 	resourceRoot,
 );
 const kernelVersion = cxContentVersion(kernel);
-const captureInstructions = `Correction capture is evidence, not a durable rule. When Charlie's current feedback may mean your previous judgment, action, priority, scope, or explanation should have differed, answer normally and append this hidden marker at the end:
+const captureInstructions = `Correction capture is evidence, not a durable rule. Capture only when Charlie identifies a concrete mismatch in your prior answer or action, or explicitly establishes a standing preference that your prior choice missed. Check what you actually said or did against the request at that time. Answer normally and append this hidden marker at the end:
 <cx-correction>{"category":"...","agentDecision":"...","userFeedback":"...","expectedBehavior":"...","strength":"weak|strong"}</cx-correction>
-Do not mention the marker. Do not append a marker for ordinary new information or a scope change requested before your response.`;
+Do not mention the marker. Confirmation questions, status requests, selecting an option you offered, new information, and changed requirements are not corrections by themselves. Do not invent a prior mistake from the user's later preference. Do not capture the same incident again just because you discuss it further.`;
 const groupingInstructions = readFileSync(join(resourceRoot, "correction-grouping.md"), "utf8").trim();
 
 type CorrectionsDependencies = {
 	agentDir?: string;
-	group?: (candidates: CorrectionCandidate[], ctx: ExtensionContext, signal: AbortSignal) => Promise<CorrectionPattern[]>;
+	group?: (candidates: CorrectionCandidate[], ctx: ExtensionContext, signal: AbortSignal, context: CorrectionGroupingContext) => Promise<CorrectionPattern[]>;
 };
 
 const now = () => new Date().toISOString();
@@ -65,8 +67,8 @@ Pattern ID: ${pattern.id}
 Problem: ${pattern.title}
 Summary: ${pattern.summary}
 Why it was grouped: ${pattern.reason}
-Evidence:
-${candidates.map((candidate) => `- ${candidate.id} · ${candidate.createdAt} · ${candidate.project}\n  Source entries: ${candidate.source.requestEntryId}, ${candidate.source.assistantEntryId}, ${candidate.source.correctionEntryId}\n  Agent decision: ${candidate.agentDecision}\n  Feedback: ${candidate.userFeedback}\n  Expected behavior: ${candidate.expectedBehavior}`).join("\n")}
+${pattern.relatedPatternId ? `Related pattern: ${pattern.relatedPatternId}\n` : ""}${pattern.readiness ? `Readiness assessment: ${JSON.stringify(pattern.readiness)}\n` : ""}Evidence:
+${candidates.map((candidate) => `- ${candidate.id} · ${candidate.createdAt} · ${candidate.project}\n  Source entries: ${candidate.source.requestEntryId}, ${candidate.source.assistantEntryId}, ${candidate.source.correctionEntryId}\n  Agent decision: ${candidate.agentDecision}\n  Feedback: ${candidate.userFeedback}\n  Expected behavior: ${candidate.expectedBehavior}\n  Source exchange: ${JSON.stringify(candidate.evidence ?? { complete: false })}`).join("\n")}
 ${pattern.intervention ? `Current proposal:\n${JSON.stringify({ proof: pattern.proof, eval: pattern.eval, intervention: pattern.intervention }, null, 2)}\n` : "No intervention has been authored yet.\n"}
 Inspect the current instruction, skill, memory, documentation, code, or test that would own any proposed change before recommending one. Explain the problem, existing owner, exact change, exclusions, proof, and tradeoffs in plain terms. Keep unrelated failure mechanisms separate. If I later ask to save the inspected proposal, use correction_propose. Do not save it during this discussion.`;
 const acceptedPrompt = (pattern: CorrectionPattern) => `Implement the accepted correction proposal below. This is authorization for the exact local change and focused verification, but not commit, push, publication, or deployment.
@@ -112,13 +114,14 @@ async function defaultGroup(
 	candidates: CorrectionCandidate[],
 	ctx: ExtensionContext,
 	signal: AbortSignal,
+	context: CorrectionGroupingContext,
 ): Promise<CorrectionPattern[]> {
 	const model = fableModel(ctx);
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 	if (!auth.ok) throw new Error(`Correction grouping could not authenticate Fable: ${auth.error}`);
 	const message: Message = {
 		role: "user",
-		content: [{ type: "text", text: `Candidates:\n${groupingInput(candidates)}` }],
+		content: [{ type: "text", text: groupingInput(candidates, context) }],
 		timestamp: Date.now(),
 	};
 	const response = await complete(
@@ -135,7 +138,7 @@ async function defaultGroup(
 		.join("\n")
 		.trim();
 	if (!output) throw new Error("Correction grouping returned no text.");
-	return parseGroupingOutput(output, candidates);
+	return parseGroupingOutput(output, candidates, context);
 }
 
 export default function registerCorrections(
@@ -158,21 +161,29 @@ export default function registerCorrections(
 		if (!restoreCxState(ctx.sessionManager.getEntries()).active) throw new Error("Correction capture requires an active CX session.");
 		const sessionId = ctx.sessionManager.getSessionId();
 		if (!sessionId) throw new Error("Correction capture requires a persisted session.");
-		const source = inferCorrectionSource(ctx.sessionManager.getBranch(), explicitSource);
+		const entries = ctx.sessionManager.getBranch();
+		const source = inferCorrectionSource(entries, explicitSource);
+		const existing = activeState().allCandidates.find((candidate) => candidate.sessionId === sessionId
+			&& candidate.source.assistantEntryId === source.assistantEntryId
+			&& candidate.source.correctionEntryId === source.correctionEntryId);
+		if (existing) return existing;
 		const candidate = createCorrectionCandidate({
 			sessionId,
 			project: ctx.cwd,
 			source,
 			...interpretation,
+			evidence: correctionEvidence(entries, source),
 			kernelVersion,
 		});
 		appendCorrectionEvent(filePath, { type: "candidate_recorded", at: now(), candidate });
 		scheduleGrouping(ctx);
 		return candidate;
 	};
-	const needsGrouping = () => {
+	const needsGrouping = (ctx: ExtensionContext) => {
 		const events = readCorrectionEvents(filePath);
 		const state = correctionState(events);
+		const guidance = ctx.getSystemPrompt();
+		const guidanceVersion = { project: ctx.cwd, hash: cxContentVersion(guidance) };
 		const snapshotIndex = events.findLastIndex(
 			(event) => event.type === "grouping_snapshot" && event.version === CORRECTION_GROUPING_VERSION,
 		);
@@ -180,13 +191,21 @@ export default function registerCorrections(
 		const invalidated = events.slice(snapshotIndex + 1).some(
 			(event) => event.type === "candidate_recorded"
 				|| event.type === "candidate_undone"
-				|| (event.type === "proposal_outcome" && event.outcome === "rejected_by_proof"),
+				|| event.type === "proposal_surfaced"
+				|| event.type === "proposal_decided"
+				|| event.type === "proposal_outcome",
 		);
 		return {
+			revision: events.length,
+			guidance,
+			guidanceVersion,
+			state,
 			candidates: state.groupingCandidates,
 			needed: state.groupingCandidates.length > 0 && (
 				!snapshot
 				|| snapshot.type !== "grouping_snapshot"
+				|| snapshot.guidance?.project !== guidanceVersion.project
+				|| snapshot.guidance?.hash !== guidanceVersion.hash
 				|| !sameValues(snapshot.candidateIds, state.groupingCandidates.map(({ id }) => id))
 				|| invalidated
 			),
@@ -201,13 +220,34 @@ export default function registerCorrections(
 		grouping = (async () => {
 			while (groupAgain) {
 				groupAgain = false;
-				const pending = needsGrouping();
+				const pending = needsGrouping(ctx);
 				if (!pending.needed) continue;
-				const patterns = await group(pending.candidates, ctx, controller.signal);
+				const context: CorrectionGroupingContext = {
+					project: ctx.cwd,
+					guidance: pending.guidance,
+					existingPatterns: pending.state.allPatterns
+						.filter(({ id }) => (pending.state.surfaced.has(id) || pending.state.decisions.has(id))
+							&& pending.state.outcomes.get(id) !== "rejected_by_proof")
+						.map(({ id, title, summary, reason, candidateIds, intervention }) => ({
+							id, title, summary, reason, intervention,
+							projects: [...new Set(pending.state.allCandidates
+								.filter((candidate) => candidateIds.includes(candidate.id))
+								.map(({ project }) => project))],
+							decision: pending.state.decisions.get(id),
+							outcome: pending.state.outcomes.get(id),
+						})),
+				};
+				const patterns = await group(pending.candidates, ctx, controller.signal, context);
+				if (controller.signal.aborted) return;
+				if (readCorrectionEvents(filePath).length !== pending.revision) {
+					groupAgain = true;
+					continue;
+				}
 				appendCorrectionEvent(filePath, {
 					type: "grouping_snapshot",
 					at: now(),
 					version: CORRECTION_GROUPING_VERSION,
+					guidance: pending.guidanceVersion,
 					candidateIds: pending.candidates.map(({ id }) => id),
 					patterns,
 				});
@@ -413,7 +453,7 @@ export default function registerCorrections(
 				outcome: params.outcome,
 				evidence: params.evidence.replace(/\s+/g, " ").trim(),
 			});
-			if (params.outcome === "rejected_by_proof") scheduleGrouping(ctx);
+			scheduleGrouping(ctx);
 			return {
 				content: [{ type: "text", text: `Recorded ${params.outcome} for ${params.patternId}.` }],
 				details: { patternId: params.patternId, outcome: params.outcome },
@@ -461,6 +501,7 @@ export default function registerCorrections(
 			patternId,
 			decision,
 		});
+		scheduleGrouping(ctx);
 		if (decision === "accepted") {
 			pi.sendUserMessage(acceptedPrompt(decidedPattern));
 			return;

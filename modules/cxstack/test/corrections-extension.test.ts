@@ -11,6 +11,7 @@ import {
 	correctionsFile,
 	readCorrectionEvents,
 	type CorrectionCandidate,
+	type CorrectionGroupingContext,
 	type CorrectionPattern,
 } from "../lib/corrections.ts";
 import { CX_STATE_ENTRY } from "../lib/cx.ts";
@@ -42,7 +43,7 @@ const readyPatterns = (candidates: CorrectionCandidate[]): CorrectionPattern[] =
 }];
 
 function harness(
-	group: (candidates: CorrectionCandidate[], ctx: ExtensionContext, signal: AbortSignal) => Promise<CorrectionPattern[]> = async (candidates) => readyPatterns(candidates),
+	group: (candidates: CorrectionCandidate[], ctx: ExtensionContext, signal: AbortSignal, context: CorrectionGroupingContext) => Promise<CorrectionPattern[]> = async (candidates) => readyPatterns(candidates),
 	existingAgentDir?: string,
 ) {
 	const agentDir = existingAgentDir ?? mkdtempSync(join(tmpdir(), "corrections-extension-"));
@@ -81,6 +82,7 @@ function harness(
 		cwd: agentDir,
 		hasUI: true,
 		mode: "tui",
+		getSystemPrompt: () => "Compare proposed machinery against doing nothing.",
 		modelRegistry: {} as never,
 		scopedModels: [],
 		sessionManager: {
@@ -453,6 +455,67 @@ test("accepted proposals stay pending until their proof finishes", async () => {
 	expect(rejected.candidates).toHaveLength(1);
 	expect(rejected.groupingCandidates).toHaveLength(1);
 	expect(rejected.patterns.map(({ id }) => id)).not.toContain(pattern.id);
+});
+
+test("repeated capture of the same source does not multiply evidence", async () => {
+	const h = harness();
+	capture(h);
+	capture(h);
+	await settle();
+	const state = correctionState(readCorrectionEvents(correctionsFile(h.agentDir)));
+	expect(state.allCandidates).toHaveLength(1);
+	expect(state.allCandidates[0]?.evidence?.complete).toBeTrue();
+});
+
+test("grouping receives current guidance and frozen decisions", async () => {
+	const contexts: CorrectionGroupingContext[] = [];
+	const h = harness(async (candidates, _ctx, _signal, context) => {
+		contexts.push(context);
+		return readyPatterns(candidates);
+	});
+	capture(h);
+	await settle();
+	await h.handlers.get("agent_settled")?.({}, h.context);
+	const frozen = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).patterns[0];
+	if (!frozen) throw new Error("Expected a frozen pattern");
+	await h.commands.get("corrections")?.(`defer ${frozen.id}`, h.context);
+	h.entries.push(
+		{ type: "message", id: "second-answer", message: { role: "assistant", content: [{ type: "text", text: "Add a second sanitizer." }] } },
+		{ type: "message", id: "second-feedback", message: { role: "user", content: "Still unnecessary." } },
+	);
+	capture(h);
+	await settle();
+	expect(contexts.at(-1)?.guidance).toBe(h.context.getSystemPrompt());
+	expect(contexts.at(-1)?.existingPatterns).toContainEqual(expect.objectContaining({ id: frozen.id, decision: "deferred" }));
+});
+
+test("does not publish a stale grouping result after evidence is undone", async () => {
+	const pending = Promise.withResolvers<CorrectionPattern[]>();
+	const h = harness(async () => pending.promise);
+	capture(h);
+	const recorded = correctionState(readCorrectionEvents(correctionsFile(h.agentDir))).candidates[0];
+	if (!recorded) throw new Error("Expected a candidate");
+	await h.commands.get("corrections")?.(`undo ${recorded.id}`, h.context);
+	pending.resolve(readyPatterns([recorded]));
+	await settle();
+	const events = readCorrectionEvents(correctionsFile(h.agentDir));
+	expect(events.filter(({ type }) => type === "grouping_snapshot")).toHaveLength(0);
+	expect(correctionState(events).patterns).toHaveLength(0);
+});
+
+test("guidance changes invalidate the previous grouping snapshot", async () => {
+	let calls = 0;
+	const h = harness(async (candidates) => {
+		calls += 1;
+		return readyPatterns(candidates);
+	});
+	capture(h);
+	await settle();
+	expect(calls).toBe(1);
+	h.context.getSystemPrompt = () => "The current owner now covers this behavior.";
+	await h.handlers.get("session_start")?.({}, h.context);
+	await settle();
+	expect(calls).toBe(2);
 });
 
 test("selects the newest scoped Fable model and ignores other models", () => {

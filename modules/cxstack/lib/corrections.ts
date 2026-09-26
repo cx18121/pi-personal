@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export const CORRECTION_GROUPING_VERSION = 2;
+export const CORRECTION_GROUPING_VERSION = 3;
 
 export type CorrectionStrength = "weak" | "strong";
 export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
@@ -36,6 +36,10 @@ export type CorrectionCandidate = {
 	strength: CorrectionStrength;
 	kernelVersion: string;
 	createdAt: string;
+	evidence?: {
+		messages: Array<{ id: string; role: string; text: string }>;
+		complete: boolean;
+	};
 };
 
 export type CorrectionEval = {
@@ -70,6 +74,8 @@ export type CorrectionPattern = {
 	summary: string;
 	candidateIds: string[];
 	disposition: "one_off" | "hold" | "ready";
+	relatedPatternId?: string;
+	readiness?: { scope: "global" | "project"; mismatch: string; gap: string; benefit: string };
 	proof?: CorrectionProposal["proof"];
 	eval?: CorrectionEval;
 	intervention?: CorrectionIntervention;
@@ -79,7 +85,7 @@ export type CorrectionPattern = {
 export type CorrectionEvent =
 	| { type: "candidate_recorded"; at: string; candidate: CorrectionCandidate }
 	| { type: "candidate_undone"; at: string; candidateId: string }
-	| { type: "grouping_snapshot"; at: string; version?: number; candidateIds: string[]; patterns: CorrectionPattern[] }
+	| { type: "grouping_snapshot"; at: string; version?: number; candidateIds: string[]; patterns: CorrectionPattern[]; guidance?: { project: string; hash: string } }
 	| { type: "proposal_surfaced"; at: string; patternId: string; pattern?: CorrectionPattern }
 	| { type: "proposal_authored"; at: string; patternId: string; proposal: CorrectionProposal }
 	| { type: "proposal_decided"; at: string; patternId: string; decision: CorrectionDecision }
@@ -99,7 +105,22 @@ export type CorrectionState = {
 type SessionEntry = {
 	id?: unknown;
 	type?: unknown;
-	message?: { role?: unknown };
+	message?: { role?: unknown; content?: unknown; toolName?: unknown; toolCallId?: unknown };
+};
+
+export type CorrectionGroupingContext = {
+	project: string;
+	guidance: string;
+	existingPatterns: Array<{
+		id: string;
+		projects: string[];
+		intervention?: CorrectionIntervention;
+		title: string;
+		summary: string;
+		reason: string;
+		decision?: CorrectionDecision;
+		outcome?: CorrectionOutcome;
+	}>;
 };
 
 const bounded = (value: string, max = 600) => value.replace(/\s+/g, " ").trim().slice(0, max);
@@ -207,31 +228,72 @@ export function correctionState(events: CorrectionEvent[]): CorrectionState {
 	};
 }
 
-export function inferCorrectionSource(entries: SessionEntry[], explicit?: CorrectionSource): CorrectionSource {
-	const byId = new Map(entries.map((entry) => [entry.id, entry]));
-	if (explicit) {
-		const roles = [
-			[explicit.requestEntryId, "user"],
-			[explicit.assistantEntryId, "assistant"],
-			[explicit.correctionEntryId, "user"],
-		] as const;
-		for (const [id, role] of roles) {
-			if (byId.get(id)?.message?.role !== role) throw new Error(`Correction source ${id} is not a ${role} message.`);
-		}
-		return explicit;
-	}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	value !== null && typeof value === "object" && !Array.isArray(value);
+const isFeedback = (entry: SessionEntry) => entry.message?.role === "user"
+	|| (entry.message?.role === "toolResult" && entry.message.toolName === "ask_user_question");
+const hasQuestion = (entry: SessionEntry, callId?: unknown) => Array.isArray(entry.message?.content)
+	&& entry.message.content.some((part: unknown) => isRecord(part) && part.type === "toolCall"
+		&& part.name === "ask_user_question" && (callId === undefined || part.id === callId));
+const entryText = (entry: SessionEntry): string => {
+	const content = entry.message?.content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content.flatMap((part: unknown) => {
+		if (!isRecord(part)) return [];
+		if (part.type === "text" && typeof part.text === "string") return [part.text];
+		if (part.type === "toolCall" && part.name === "ask_user_question") return [JSON.stringify(part.arguments)];
+		return [];
+	}).join("\n");
+};
 
+export function inferCorrectionSource(entries: SessionEntry[], explicit?: CorrectionSource): CorrectionSource {
 	const messages = entries.filter((entry) => entry.type === "message" && typeof entry.id === "string" && entry.message);
-	const correction = messages.findLastIndex((entry) => entry.message?.role === "user");
-	const assistant = messages.findLastIndex((entry, index) => index < correction && entry.message?.role === "assistant");
-	const request = messages.findLastIndex((entry, index) => index < assistant && entry.message?.role === "user");
-	if ([correction, assistant, request].some((index) => index < 0)) {
-		throw new Error("Correction logging needs a request, the corrected assistant response, and the user feedback.");
+	const correction = explicit
+		? messages.findIndex((entry) => entry.id === explicit.correctionEntryId)
+		: messages.findLastIndex(isFeedback);
+	const feedback = messages[correction];
+	const assistant = explicit
+		? messages.findIndex((entry) => entry.id === explicit.assistantEntryId)
+		: messages.findLastIndex((entry, index) => index < correction && entry.message?.role === "assistant"
+			&& (feedback?.message?.role === "toolResult"
+				? hasQuestion(entry, feedback.message.toolCallId)
+				: entryText(entry).trim().length > 0 || entry.message.content === undefined));
+	const request = explicit
+		? messages.findIndex((entry) => entry.id === explicit.requestEntryId)
+		: messages.findLastIndex((entry, index) => index < assistant && entry.message?.role === "user");
+	const requestEntry = messages[request];
+	const assistantEntry = messages[assistant];
+	if (!requestEntry || !assistantEntry || !feedback || request >= assistant || assistant >= correction
+		|| requestEntry.message?.role !== "user" || assistantEntry.message?.role !== "assistant" || !isFeedback(feedback)
+		|| (feedback.message?.role === "toolResult" && !hasQuestion(assistantEntry, feedback.message.toolCallId))
+		|| typeof requestEntry.id !== "string" || typeof assistantEntry.id !== "string" || typeof feedback.id !== "string") {
+		throw new Error("Correction logging needs an ordered request, corrected assistant response, and user or questionnaire feedback.");
 	}
+	return { requestEntryId: requestEntry.id, assistantEntryId: assistantEntry.id, correctionEntryId: feedback.id };
+}
+
+export function correctionEvidence(entries: SessionEntry[], source: CorrectionSource): NonNullable<CorrectionCandidate["evidence"]> {
+	inferCorrectionSource(entries, source);
+	const start = entries.findIndex(({ id }) => id === source.requestEntryId);
+	const end = entries.findIndex(({ id }) => id === source.correctionEntryId);
+	const messages = entries.slice(0, end + 1).flatMap((entry, index) => {
+		if (typeof entry.id !== "string" || typeof entry.message?.role !== "string") return [];
+		if (index < start && !hasQuestion(entry) && !(entry.message.role === "toolResult" && isFeedback(entry))) return [];
+		if (!isFeedback(entry) && entry.message.role !== "assistant") return [];
+		return [{ id: entry.id, role: entry.message.role, text: entryText(entry) }];
+	});
+	const complete = messages.every(({ text }) => text.length <= 12000)
+		&& messages.reduce((length, { text }) => length + text.length, 0) <= 36000
+		&& Object.values(source).every((id) => messages.some((message) => message.id === id && message.text.trim()));
+	let remaining = 36000;
 	return {
-		requestEntryId: messages[request]!.id as string,
-		assistantEntryId: messages[assistant]!.id as string,
-		correctionEntryId: messages[correction]!.id as string,
+		complete,
+		messages: messages.map((message) => {
+			const text = message.text.slice(0, Math.min(12000, remaining));
+			remaining -= text.length;
+			return { ...message, text };
+		}),
 	};
 }
 
@@ -272,6 +334,7 @@ export function createCorrectionCandidate(input: {
 	expectedBehavior: string;
 	strength: CorrectionStrength;
 	kernelVersion: string;
+	evidence?: CorrectionCandidate["evidence"];
 	now?: Date;
 }): CorrectionCandidate {
 	return {
@@ -285,20 +348,13 @@ export function createCorrectionCandidate(input: {
 		expectedBehavior: bounded(input.expectedBehavior),
 		strength: input.strength,
 		kernelVersion: input.kernelVersion,
+		...(input.evidence ? { evidence: input.evidence } : {}),
 		createdAt: (input.now ?? new Date()).toISOString(),
 	};
 }
 
-export function groupingInput(candidates: CorrectionCandidate[]): string {
-	return JSON.stringify(candidates.map(({ id, project, category, agentDecision, userFeedback, expectedBehavior, strength }) => ({
-		id,
-		project,
-		category,
-		agentDecision,
-		userFeedback,
-		expectedBehavior,
-		strength,
-	})), null, 2);
+export function groupingInput(candidates: CorrectionCandidate[], context: CorrectionGroupingContext): string {
+	return JSON.stringify({ candidates, ...context }, null, 2);
 }
 
 export function freezeCorrectionPattern(pattern: CorrectionPattern): CorrectionPattern {
@@ -377,27 +433,43 @@ export function parseCorrectionProposal(value: unknown): CorrectionProposal {
 	};
 }
 
-export function parseGroupingOutput(output: string, candidates: CorrectionCandidate[]): CorrectionPattern[] {
+export function parseGroupingOutput(output: string, candidates: CorrectionCandidate[], context?: CorrectionGroupingContext): CorrectionPattern[] {
 	const start = output.indexOf("[");
 	const end = output.lastIndexOf("]");
 	if (start < 0 || end < start) throw new Error("Correction grouping returned no JSON array.");
 	const value: unknown = JSON.parse(output.slice(start, end + 1));
 	if (!Array.isArray(value)) throw new Error("Correction grouping must return an array.");
 	const candidateIds = new Set(candidates.map((candidate) => candidate.id));
-	const patterns = value.map((item, index) => {
-		if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Invalid correction pattern ${index + 1}.`);
-		const record = item as Record<string, unknown>;
+	const patterns = value.map((item, index): CorrectionPattern => {
+		if (!isRecord(item)) throw new Error(`Invalid correction pattern ${index + 1}.`);
+		const record = item;
 		const evidence = stringArray(record.candidateIds);
 		const title = text(record.title);
 		const summary = text(record.summary);
 		const reason = text(record.reason);
-		const disposition = ["one_off", "hold", "ready"].includes(String(record.disposition))
-			? record.disposition as CorrectionPattern["disposition"]
-			: undefined;
+		const disposition = record.disposition === "one_off" || record.disposition === "hold" || record.disposition === "ready"
+			? record.disposition : undefined;
 		if (!title || !summary || !evidence?.length || !disposition || !reason) {
 			throw new Error(`Incomplete correction pattern ${index + 1}.`);
 		}
 		if (evidence.some((id) => !candidateIds.has(id))) throw new Error(`Correction pattern ${index + 1} references unknown evidence.`);
+		const relatedPatternId = text(record.relatedPatternId);
+		if (relatedPatternId && !context?.existingPatterns.some(({ id }) => id === relatedPatternId)) {
+			throw new Error(`Correction pattern ${index + 1} references an unknown related pattern.`);
+		}
+		const assessment = isRecord(record.readiness) ? record.readiness : {};
+		const mismatch = text(assessment.mismatch)?.trim();
+		const gap = text(assessment.gap)?.trim();
+		const benefit = text(assessment.benefit)?.trim();
+		const scope = assessment.scope === "global" || assessment.scope === "project" ? assessment.scope : undefined;
+		const readiness: CorrectionPattern["readiness"] = mismatch && gap && benefit && scope
+			? { scope, mismatch: bounded(mismatch), gap: bounded(gap), benefit: bounded(benefit) }
+			: undefined;
+		const grounded = context?.guidance.trim() && evidence.every((id) => {
+			const candidate = candidates.find((candidate) => candidate.id === id);
+			return candidate?.evidence?.complete && (readiness?.scope === "global" || candidate.project === context.project);
+		});
+		const checkedDisposition = relatedPatternId ? "one_off" : disposition === "ready" && (!grounded || !readiness) ? "hold" : disposition;
 		const uniqueEvidence = [...new Set(evidence)].sort();
 		const fingerprint = createHash("sha256").update(uniqueEvidence.join("\0")).digest("hex").slice(0, 10);
 		return {
@@ -405,8 +477,12 @@ export function parseGroupingOutput(output: string, candidates: CorrectionCandid
 			title: bounded(title, 120),
 			summary: bounded(summary),
 			candidateIds: uniqueEvidence,
-			disposition,
-			reason: bounded(reason),
+			disposition: checkedDisposition,
+			...(relatedPatternId ? { relatedPatternId } : {}),
+			...(readiness ? { readiness } : {}),
+			reason: disposition === "ready" && checkedDisposition === "hold"
+				? "Needs complete source evidence, guidance for the affected scope, and a specific uncovered gap before discussion."
+				: bounded(reason),
 		};
 	});
 	const assignedCandidates = new Set<string>();
@@ -416,5 +492,6 @@ export function parseGroupingOutput(output: string, candidates: CorrectionCandid
 			assignedCandidates.add(candidateId);
 		}
 	}
+	if (assignedCandidates.size !== candidateIds.size) throw new Error("Correction grouping omitted candidate evidence.");
 	return patterns;
 }

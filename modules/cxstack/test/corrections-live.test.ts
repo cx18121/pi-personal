@@ -106,6 +106,14 @@ test("captures model-marked corrections without another model turn", async () =>
 		expect(parent.session.messages.filter((message) => message.role === "assistant")).toHaveLength(4);
 		const state = correctionState(readCorrectionEvents(correctionsFile(agentDir)));
 		expect(state.candidates).toHaveLength(1);
+		expect(state.candidates[0]?.evidence).toEqual({
+			complete: true,
+			messages: [
+				{ id: expect.any(String), role: "user", text: "What should we improve next?" },
+				{ id: expect.any(String), role: "assistant", text: "Build a transcript sanitizer." },
+				{ id: expect.any(String), role: "user", text: "That sanitizer seems unnecessary." },
+			],
+		});
 		expect(state.candidates[0]?.source).toMatchObject({
 			requestEntryId: expect.any(String),
 			assistantEntryId: expect.any(String),

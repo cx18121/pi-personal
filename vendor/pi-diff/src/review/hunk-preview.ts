@@ -4,6 +4,7 @@ import { extname } from "node:path";
 import { codeToANSI } from "../shiki.js";
 import * as Diff from "diff";
 import { configIndicatorStyle } from "../core/config.js";
+import { wrapAnsiWords } from "../wrap.js";
 import { getSepStyle, type ParsedDiff, sepLabelSplit, sepLabelUnified } from "../core/diff.js";
 import type { ReviewHunk } from "./git.js";
 
@@ -129,9 +130,9 @@ const SPLIT_MAX_WRAP_LINES = 10;
 const MAX_HL_CHARS = 80_000;
 const CACHE_LIMIT = 192;
 const WORD_DIFF_MIN_SIM = 0.15;
-const MAX_WRAP_ROWS_WIDE = 3;
-const MAX_WRAP_ROWS_MED = 2;
-const MAX_WRAP_ROWS_NARROW = 1;
+const MAX_WRAP_ROWS_WIDE = 40;
+const MAX_WRAP_ROWS_MED = 40;
+const MAX_WRAP_ROWS_NARROW = 40;
 const DEFAULT_RENDER_WIDTH = 120;
 const MIN_RENDER_WIDTH = 40;
 
@@ -330,11 +331,17 @@ function autoDeriveBgFromTheme(theme: any): void {
 			} catch {}
 		}
 
-		BG_ADD = mixBg(addBase, addRgb, 0.15);
+		const cardBase = parseAnsiRgb(BG_BASE) ?? addBase;
+		const addAccent = {
+			r: Math.round(addRgb.r * 0.2 + 70 * 0.8),
+			g: Math.round(addRgb.g * 0.2 + 200 * 0.8),
+			b: Math.round(addRgb.b * 0.2 + 90 * 0.8),
+		};
+		BG_ADD = mixBg(cardBase, addAccent, 0.22);
 		BG_DEL = mixBg(delBase, delRgb, 0.18);
-		BG_ADD_W = mixBg(addBase, addRgb, 0.45);
+		BG_ADD_W = mixBg(cardBase, addAccent, 0.42);
 		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
-		BG_GUTTER_ADD = mixBg(addBase, addRgb, 0.1);
+		BG_GUTTER_ADD = mixBg(cardBase, addAccent, 0.16);
 		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.12);
 		BG_EMPTY = BG_BASE;
 		RST = `\x1b[0m${BG_BASE}`;
@@ -539,25 +546,6 @@ function fit(content: string, width: number): string {
 	return width > 2 ? `${content.slice(0, index)}${RST}${FG_DIM}›${RST}` : `${content.slice(0, index)}${RST}`;
 }
 
-function ansiState(content: string): string {
-	let fg = "";
-	let bg = "";
-	for (const match of content.matchAll(ANSI_CAPTURE_RE)) {
-		const params = match[1] ?? "";
-		const sequence = match[0] ?? "";
-		if (params === "0") {
-			fg = "";
-			bg = "";
-		} else if (params === "39") {
-			fg = "";
-		} else if (params.startsWith("38;")) {
-			fg = sequence;
-		} else if (params.startsWith("48;")) {
-			bg = sequence;
-		}
-	}
-	return bg + fg;
-}
 
 function isLowContrastShikiFg(params: string): boolean {
 	if (params === "30" || params === "90") return true;
@@ -577,67 +565,7 @@ function normalizeShikiContrast(ansi: string): string {
 }
 
 function wrapAnsi(content: string, width: number, maxRows: number, fillBg = ""): string[] {
-	if (width <= 0) return [""];
-	const plain = strip(content);
-	if (plain.length <= width) {
-		const padding = width - plain.length;
-		return padding > 0 ? [content + fillBg + " ".repeat(padding) + (fillBg ? RST : "")] : [content];
-	}
-	const rows: string[] = [];
-	let row = "";
-	let visible = 0;
-	let index = 0;
-	let onLastRow = false;
-	let effectiveWidth = width;
-	while (index < content.length) {
-		if (!onLastRow && rows.length >= maxRows - 1) {
-			onLastRow = true;
-			effectiveWidth = width > 2 ? width - 1 : width;
-		}
-		if (content[index] === "\x1b") {
-			const end = content.indexOf("m", index);
-			if (end !== -1) {
-				row += content.slice(index, end + 1);
-				index = end + 1;
-				continue;
-			}
-		}
-		if (visible >= effectiveWidth) {
-			if (onLastRow) {
-				let hasMore = false;
-				for (let cursor = index; cursor < content.length; cursor++) {
-					if (content[cursor] === "\x1b") {
-						const escapeEnd = content.indexOf("m", cursor);
-						if (escapeEnd !== -1) {
-							cursor = escapeEnd;
-							continue;
-						}
-					}
-					hasMore = true;
-					break;
-				}
-				if (hasMore && width > 2) row += `${RST}${FG_DIM}›${RST}`;
-				else row += fillBg + " ".repeat(Math.max(0, width - visible)) + RST;
-				rows.push(row);
-				return rows;
-			}
-			const state = ansiState(row);
-			rows.push(row + RST);
-			row = state + fillBg;
-			visible = 0;
-			if (rows.length >= maxRows - 1) {
-				onLastRow = true;
-				effectiveWidth = width > 2 ? width - 1 : width;
-			}
-		}
-		row += content[index];
-		visible += 1;
-		index += 1;
-	}
-	if (row.length > 0 || rows.length === 0) {
-		rows.push(row + fillBg + " ".repeat(Math.max(0, width - visible)) + RST);
-	}
-	return rows;
+	return wrapAnsiWords(content, width, maxRows, fillBg, RST, `${FG_DIM}›`);
 }
 
 function lnum(value: number | null, width: number, fg = FG_LNUM): string {

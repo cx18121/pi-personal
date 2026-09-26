@@ -36,6 +36,7 @@ import {
 	parseApplyPatchInput,
 } from "./core/apply-patch.js";
 import { configIndicatorStyle, loadPiDiffConfig, type PiDiffToolName } from "./core/config.js";
+import { wrapAnsiWords } from "./wrap.js";
 import {
 	computeHunkBlocks,
 	type DiffLine,
@@ -277,15 +278,21 @@ function autoDeriveBgFromTheme(theme: PiTheme): void {
 		}
 
 		// Line backgrounds — visible accent mixed into the matching tool-state base (15–18%)
-		BG_ADD = mixBg(addBase, addRgb, 0.15);
+		const cardBase = parseAnsiRgb(BG_BASE) ?? addBase;
+		const addAccent = {
+			r: Math.round(addRgb.r * 0.2 + 70 * 0.8),
+			g: Math.round(addRgb.g * 0.2 + 200 * 0.8),
+			b: Math.round(addRgb.b * 0.2 + 90 * 0.8),
+		};
+		BG_ADD = mixBg(cardBase, addAccent, 0.22);
 		BG_DEL = mixBg(delBase, delRgb, 0.18);
 
 		// Word-level highlights — more prominent (45–50%)
-		BG_ADD_W = mixBg(addBase, addRgb, 0.45);
+		BG_ADD_W = mixBg(cardBase, addAccent, 0.42);
 		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
 
 		// Gutters — slightly subtler than lines (10–12%)
-		BG_GUTTER_ADD = mixBg(addBase, addRgb, 0.1);
+		BG_GUTTER_ADD = mixBg(cardBase, addAccent, 0.16);
 		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.12);
 
 		// Empty filler and context — match the success/context base
@@ -463,9 +470,9 @@ const WORD_DIFF_MIN_SIM = 0.15; // was 0.2 — show word diffs for slightly less
 // --- Wrapping ---
 // Adaptive: narrow terminals truncate aggressively, wide terminals allow wrapping.
 // Actual wrap rows are computed per-render via adaptiveWrapRows().
-const MAX_WRAP_ROWS_WIDE = 3; // ≥180 cols
-const MAX_WRAP_ROWS_MED = 2; // 120–179 cols
-const MAX_WRAP_ROWS_NARROW = 1; // <120 cols (truncate, no wrap)
+const MAX_WRAP_ROWS_WIDE = 40;
+const MAX_WRAP_ROWS_MED = 40;
+const MAX_WRAP_ROWS_NARROW = 40;
 
 // ---------------------------------------------------------------------------
 // ANSI
@@ -655,25 +662,6 @@ function fit(s: string, w: number): string {
 }
 
 /** Extract last active fg + bg ANSI codes from a string. Used for wrapping continuations. */
-function ansiState(s: string): string {
-	let fg = "",
-		bg = "";
-	for (const match of s.matchAll(ANSI_CAPTURE_RE)) {
-		const p = match[1] ?? "";
-		const seq = match[0] ?? "";
-		if (p === "0") {
-			fg = "";
-			bg = "";
-		} else if (p === "39") {
-			fg = "";
-		} else if (p.startsWith("38;")) {
-			fg = seq;
-		} else if (p.startsWith("48;")) {
-			bg = seq;
-		}
-	}
-	return bg + fg;
-}
 
 function isLowContrastShikiFg(params: string): boolean {
 	if (params === "30" || params === "90") return true;
@@ -694,79 +682,7 @@ function normalizeShikiContrast(ansi: string): string {
 
 /** Wrap ANSI-encoded string into rows of `w` visible chars. Max `maxRows` rows; last row truncates with ›. */
 function wrapAnsi(s: string, w: number, maxRows = adaptiveWrapRows(), fillBg = ""): string[] {
-	if (w <= 0) return [""];
-	const plain = strip(s);
-	if (plain.length <= w) {
-		const pad = w - plain.length;
-		return pad > 0 ? [s + fillBg + " ".repeat(pad) + (fillBg ? RST : "")] : [s];
-	}
-
-	const rows: string[] = [];
-	let row = "",
-		vis = 0,
-		i = 0;
-	let onLastRow = false;
-	let effW = w;
-
-	while (i < s.length) {
-		// When we reach the last allowed row, reserve 1 char for › indicator
-		if (!onLastRow && rows.length >= maxRows - 1) {
-			onLastRow = true;
-			effW = w > 2 ? w - 1 : w;
-		}
-
-		// Pass through ANSI escapes
-		if (s[i] === "\x1b") {
-			const end = s.indexOf("m", i);
-			if (end !== -1) {
-				row += s.slice(i, end + 1);
-				i = end + 1;
-				continue;
-			}
-		}
-
-		// Row full
-		if (vis >= effW) {
-			if (onLastRow) {
-				// Check if remaining string has visible chars
-				let hasMore = false;
-				for (let j = i; j < s.length; j++) {
-					if (s[j] === "\x1b") {
-						const e2 = s.indexOf("m", j);
-						if (e2 !== -1) {
-							j = e2;
-							continue;
-						}
-					}
-					hasMore = true;
-					break;
-				}
-				if (hasMore && w > 2) row += `${RST}${FG_DIM}›${RST}`;
-				else row += fillBg + " ".repeat(Math.max(0, w - vis)) + RST;
-				rows.push(row);
-				return rows;
-			}
-			// Normal wrap — carry ANSI state forward
-			const state = ansiState(row);
-			rows.push(row + RST);
-			row = state + fillBg;
-			vis = 0;
-			if (rows.length >= maxRows - 1) {
-				onLastRow = true;
-				effW = w > 2 ? w - 1 : w;
-			}
-		}
-
-		row += s[i];
-		vis++;
-		i++;
-	}
-
-	// Final row, padded
-	if (row.length > 0 || rows.length === 0) {
-		rows.push(row + fillBg + " ".repeat(Math.max(0, w - vis)) + RST);
-	}
-	return rows;
+	return wrapAnsiWords(s, w, maxRows, fillBg, RST, `${FG_DIM}›`);
 }
 
 function lnum(n: number | null, w: number, fg = FG_LNUM): string {

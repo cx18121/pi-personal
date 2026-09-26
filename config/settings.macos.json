@@ -3,7 +3,7 @@
   "defaultModel": "claude-fable-5-1",
   "outputPad": 0,
   "editorPaddingX": 0,
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "packages": [
     "npm:@injaneity/pi-computer-use",
     {

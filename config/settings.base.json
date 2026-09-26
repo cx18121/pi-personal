@@ -22,5 +22,7 @@
   },
   "doubleEscapeAction": "tree",
   "tuiMode": "regular",
-  "fullscreenScrollbar": "auto"
+  "fullscreenScrollbar": "auto",
+  "quietStartup": true,
+  "collapseChangelog": true
 }

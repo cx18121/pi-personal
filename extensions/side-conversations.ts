@@ -99,15 +99,13 @@ const splitTrailingEffort = (messages: unknown[]) => {
  * exactly. Messages added since that request come from the fresh request.
  * `tool_choice: none` blocks tool calls without invalidating the cache.
  */
-export const reuseMainRequest = (main: AnthropicPayload, fresh: AnthropicPayload, question: string) => {
+export const reuseMainRequest = (main: AnthropicPayload, fresh: AnthropicPayload) => {
   const { body: prefix, effort } = splitTrailingEffort(main.messages);
   const { body: freshMessages } = splitTrailingEffort(fresh.messages);
-  const lastMain = withoutCacheControl(prefix.at(-1));
-  const matched = freshMessages.findLastIndex((message) => withoutCacheControl(message) === lastMain);
-  const tail =
-    matched === -1
-      ? [{ role: "user", content: [{ type: "text", text: question }] }]
-      : freshMessages.slice(matched + 1).map((message) => JSON.parse(withoutCacheControl(message)));
+  const matches = prefix.length > 0 && prefix.length <= freshMessages.length
+    && prefix.every((message, index) => withoutCacheControl(message) === withoutCacheControl(freshMessages[index]));
+  if (!matches) return { ...fresh, tool_choice: { type: "none" } };
+  const tail = freshMessages.slice(prefix.length).map((message) => JSON.parse(withoutCacheControl(message)));
 
   return { ...main, messages: [...prefix, ...tail, ...effort], tool_choice: { type: "none" } };
 };
@@ -651,7 +649,7 @@ export default function (pi: ExtensionAPI) {
             headers: auth.headers,
             env: auth.env,
             onPayload: mainRequest
-              ? (payload: unknown) => (isAnthropicPayload(payload) ? reuseMainRequest(mainRequest, payload, questionText) : undefined)
+              ? (payload: unknown) => (isAnthropicPayload(payload) ? reuseMainRequest(mainRequest, payload) : undefined)
               : undefined,
           },
         );

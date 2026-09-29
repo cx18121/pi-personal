@@ -30,7 +30,7 @@ test("keeps the main request as the cached prefix and appends newer messages", (
     ],
   };
 
-  const request = reuseMainRequest(main, fresh, "question");
+  const request = reuseMainRequest(main, fresh);
 
   expect(request.system).toBe(main.system);
   expect(request.tools).toBe(main.tools);
@@ -44,12 +44,18 @@ test("keeps the main request as the cached prefix and appends newer messages", (
   ]);
 });
 
-test("appends only the question when the main request is not in the current history", () => {
-  const main = { messages: [{ role: "user", content: [{ type: "text", text: "old" }] }] };
-  const fresh = { messages: [{ role: "user", content: [{ type: "text", text: "new" }] }] };
-
-  expect(reuseMainRequest(main, fresh, "question").messages).toEqual([
-    ...main.messages,
+test("uses current branch context when the cached request is not its prefix", () => {
+  const main = { system: "old system", messages: [{ role: "user", content: [{ type: "text", text: "old" }] }] };
+  const fresh = { system: "current system", messages: [
+    { role: "user", content: [{ type: "text", text: "new branch" }] },
     { role: "user", content: [{ type: "text", text: "question" }] },
-  ]);
+  ] };
+  expect(reuseMainRequest(main, fresh)).toEqual({ ...fresh, tool_choice: { type: "none" } });
+});
+
+test("matching only the last message does not establish a shared prefix", () => {
+  const sameLast = { role: "user", content: [{ type: "text", text: "continue" }] };
+  const main = { messages: [{ role: "user", content: "old branch" }, sameLast] };
+  const fresh = { messages: [{ role: "user", content: "new branch" }, sameLast, { role: "user", content: "question" }] };
+  expect(reuseMainRequest(main, fresh).messages).toEqual(fresh.messages);
 });

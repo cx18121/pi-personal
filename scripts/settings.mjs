@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { modelSettingKeys, parseModelPolicy } from "../lib/model-settings.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -49,10 +50,15 @@ if (existsSync(localOverlay)) {
 
 if (existsSync(output)) {
   const current = await readJson(output);
-  if (current.lastChangelogVersion) {
-    settings.lastChangelogVersion = current.lastChangelogVersion;
+  // Keep runtime-owned fields, including native explicit-save defaults and
+  // extension settings unknown to bootstrap. Profiles still own installation settings.
+  const managed = settings;
+  settings = merge(current, managed);
+  for (const key of [...modelSettingKeys, "lastChangelogVersion"]) {
+    if (Object.hasOwn(current, key)) settings[key] = current[key];
   }
 }
+parseModelPolicy(settings.cxModels);
 
 const serialized = `${JSON.stringify(settings, null, 2)}\n`;
 if (check) {

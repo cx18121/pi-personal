@@ -10,8 +10,9 @@
  * 4. Submits the compiled answers when done
  */
 
-import { complete, parseJsonWithRepair, type Model, type Api, type UserMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { parseJsonWithRepair, type UserMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { completeHelper } from "../lib/model-policy.js";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
@@ -87,40 +88,6 @@ Example output:
     }
   ]
 }`;
-
-const CODEX_MODEL_IDS = ["gpt-5.4-mini", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.3-codex"];
-const HAIKU_MODEL_ID = "claude-haiku-4-5";
-
-/**
- * Prefer a fast configured Codex model for extraction, then haiku, then the
- * current model.
- */
-async function selectExtractionModel(
-	currentModel: Model<Api>,
-	modelRegistry: ModelRegistry,
-): Promise<Model<Api>> {
-	for (const modelId of CODEX_MODEL_IDS) {
-		const codexModel = modelRegistry.find("openai-codex", modelId);
-		if (codexModel) {
-			const auth = await modelRegistry.getApiKeyAndHeaders(codexModel);
-			if (auth.ok) {
-				return codexModel;
-			}
-		}
-	}
-
-	const haikuModel = modelRegistry.find("anthropic", HAIKU_MODEL_ID);
-	if (!haikuModel) {
-		return currentModel;
-	}
-
-	const auth = await modelRegistry.getApiKeyAndHeaders(haikuModel);
-	if (auth.ok === false) {
-		return currentModel;
-	}
-
-	return haikuModel;
-}
 
 function toExtractedOption(value: unknown): ExtractedOption | null {
 	if (
@@ -556,37 +523,23 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Select the best model for extraction.
-			const extractionModel = await selectExtractionModel(ctx.model, ctx.modelRegistry);
-
 			// Run extraction with loader UI
 			const extractionOutcome = await ctx.ui.custom<ExtractionOutcome>((tui, theme, _kb, done) => {
-				const loader = new BorderedLoader(tui, theme, `Extracting questions using ${extractionModel.id}...`);
+				const loader = new BorderedLoader(tui, theme, "Extracting questions...");
 				loader.onAbort = () => done({ status: "cancelled" });
 
 				const doExtract = async (): Promise<ExtractionOutcome> => {
-					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(extractionModel);
-					if (auth.ok === false) {
-						return { status: "error", message: auth.error };
-					}
 					const userMessage: UserMessage = {
 						role: "user",
 						content: [{ type: "text", text: lastAssistantText! }],
 						timestamp: Date.now(),
 					};
 
-					const response = await complete(
-						extractionModel,
+					const response = await completeHelper(
+						"answer", ctx,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+						loader.signal,
 					);
-
-					if (response.stopReason === "aborted") {
-						return { status: "cancelled" };
-					}
-					if (response.stopReason === "error") {
-						return { status: "error", message: response.errorMessage ?? "question extraction failed" };
-					}
 
 					const responseText = response.content
 						.filter((c): c is { type: "text"; text: string } => c.type === "text")

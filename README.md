@@ -17,7 +17,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/apple-notes.ts`](extensions/apple-notes.ts) adds `/note` and tools for searching, listing, reading, saving, and creating Apple Notes.
 - [`extensions/clear-command.ts`](extensions/clear-command.ts) adds `/clear` for starting a session with no conversation context. It also hides `/new` from command completion.
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, active modes, context use, and diff size.
-- [`extensions/core-mcp.ts`](extensions/core-mcp.ts) connects Pi to Linear, Exa, Better Stack, Ecotone, Context7, and Slack through one MCP gateway. It keeps direct MCP tools hidden and blocks mutating Better Stack and Slack tools.
+- [`extensions/core-mcp.ts`](extensions/core-mcp.ts) registers Linear, Exa, Better Stack, Ecotone, Context7, Slack, Pencil, and Pango ClickHouse with Pi's built-in MCP support (Pi 0.99 or newer). Servers connect at session startup and tools load on demand through `tool_search`. Mutating Better Stack and Slack tools stay hidden and unreachable. Exa exposes only its four configured tools. Use `/mcp` to check connections and sign in. These extension registrations are not loaded by shell `pi mcp` commands. ClickHouse uses the pinned official stdio server and the read-only `pango_mcp_readonly` database user. [`scripts/clickhouse-mcp.py`](scripts/clickhouse-mcp.py) passes only the configured ClickHouse variables and basic runtime paths to the absolute `uv` executable. Do not use the mise shim, which can overwrite connection settings with the current project's environment. Its password comes from the macOS Keychain item `pi-clickhouse-readonly` with account `pango_mcp_readonly`. Native OAuth credentials live in `~/.pi/agent/mcp-auth.json`; sign in again when migrating from the adapter rather than copying its tokens.
 - [`modules/cxstack/extensions/cx.ts`](modules/cxstack/extensions/cx.ts) adds sticky `/cx` task ownership. It stores one session-wide boolean, injects a compact kernel only when needed, survives tree navigation and compaction, and uses `/cx off` for deterministic deactivation.
 - [`modules/cxstack/extensions/audit.ts`](modules/cxstack/extensions/audit.ts) adds `/cx-audit` for evidence-based review of recent CX sessions without ratings or dashboards.
 - [`extensions/effort.ts`](extensions/effort.ts) adds `/effort` for choosing or setting the current model's thinking level.
@@ -26,7 +26,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
 - [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
 - [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
-- [`extensions/remember-last-model.ts`](extensions/remember-last-model.ts) makes each new interactive session use the model and thinking effort selected most recently.
+- [`extensions/model-policy.ts`](extensions/model-policy.ts) supplies configured child-model preferences and blocks automatically using disabled providers. Native Pi “save as default” remains available. Ordinary session model and thinking changes are not saved automatically.
 - [`modules/cxstack/extensions/reflect.ts`](modules/cxstack/extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and approval is required before any durable write.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
 - [`extensions/superset.ts`](extensions/superset.ts) reports Pi session activity and input requests to Superset when Pi runs inside a Superset terminal.
@@ -58,7 +58,6 @@ Most of this package was written for my own setup. These parts have a direct ups
 
 - [`extensions/answer.ts`](extensions/answer.ts) is adapted from Mitsuhiko's [`answer.ts`](https://github.com/mitsuhiko/agent-stuff/blob/main/extensions/answer.ts).
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) and [`extensions/notify.ts`](extensions/notify.ts) started from Pi's [`custom-footer.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/examples/extensions/custom-footer.ts) and [`notify.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/examples/extensions/notify.ts) examples. Their current behavior is customized for this setup.
-- [`extensions/core-mcp.ts`](extensions/core-mcp.ts) is a local configuration wrapper around [`pi-mcp-adapter`](https://github.com/nicobailon/pi-mcp-adapter).
 - [`extensions/effort.ts`](extensions/effort.ts) is a new implementation inspired by [`pi-effort`](https://github.com/ricardofrantz/pi-effort), updated for the current Pi model and thinking APIs.
 - [`extensions/inline-skills.ts`](extensions/inline-skills.ts) is a customized copy of Tifan Dwi Avianto's [`@tifan/pi-inline-skills`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-inline-skills).
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) grew from the side-channel workflow in [`pi-btw`](https://github.com/dbachelder/pi-btw). The tool-free drawer and external `/side` session are custom implementations.
@@ -79,7 +78,11 @@ mise run check -- macos
 
 Use `linux` on a Linux development host.
 
-`config/settings.base.json` contains shared preferences. The platform files contain complete package lists and platform-specific defaults. `scripts/settings.mjs` merges them with the optional machine-local overlay at `~/.config/pi/settings.local.json`, preserves Pi's changelog state, and writes `~/.pi/agent/settings.json` atomically.
+`config/settings.base.json` contains shared preferences. The platform files contain complete package lists and first-install defaults. `scripts/settings.mjs` merges them with the optional machine-local overlay at `~/.config/pi/settings.local.json` and writes `~/.pi/agent/settings.json` atomically. After installation, that native settings file owns model defaults, thinking defaults, scoped models, and `cxModels`. Bootstrap preserves those fields, Pi's changelog state, and unknown runtime settings. The setup check validates installation-owned settings rather than demanding that your model choices match the initial seeds.
+
+See [Model configuration](config/README.md) for the single place to configure helper models, per-feature overrides, fallbacks, and temporary provider exclusions.
+
+Bootstrap does not upgrade installed extensions. For deliberate maintenance, run `mise run update -- macos` (or `linux`). It updates installed extensions and the model catalog, then runs tests, typechecks, and setup checks. It stops on the first failure and does not roll updates back. Pi itself remains managed by mise and dotfiles.
 
 See `config/settings.local.example.json` for adding work-only or machine-specific packages without committing local paths.
 

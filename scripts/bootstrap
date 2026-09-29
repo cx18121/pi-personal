@@ -25,5 +25,4 @@ fi
 node "$root/scripts/settings.mjs" "$profile"
 mkdir -p "$HOME/.pi/agent"
 ln -sfn "$root/config/compact-tools.json" "$HOME/.pi/agent/compact-tools.json"
-pi update --extensions --approve
 mise -C "$root" run check -- "$profile"

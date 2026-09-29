@@ -20,9 +20,10 @@ afterAll(() => rmSync(fixtureDir, { recursive: true, force: true }));
 
 const createHarness = async () => {
 	const handlers = new Map();
+	const entries = [];
 	let autocompleteFactory;
 	const pi = {
-		appendEntry() {},
+		appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
 		getCommands: () => commands,
 		on(event, handler) {
 			handlers.set(event, handler);
@@ -32,7 +33,7 @@ const createHarness = async () => {
 	};
 	const ctx = {
 		cwd: fixtureDir,
-		sessionManager: { getBranch: () => [] },
+		sessionManager: { getBranch: () => entries },
 		ui: {
 			addAutocompleteProvider(factory) {
 				autocompleteFactory = factory;
@@ -79,6 +80,22 @@ const completeSimplify = async (autocomplete, line) => {
 };
 
 describe("inline skills", () => {
+	for (const [label, text, shouldInject] of [
+		["partial", "---\nname: simplify", true],
+		["truncated", "---\nname: simplify\n---\n\nsimplify skill\n[output truncated]", true],
+		["complete", "---\nname: simplify\n---\n\nsimplify skill", false],
+	]) {
+		test(`${label} tool read records only fully delivered skill content`, async () => {
+			const { ctx, handlers } = await createHarness();
+			await handlers.get("tool_result")({
+				toolName: "read", input: { path: skillPath }, content: [{ type: "text", text }],
+			}, ctx);
+			await handlers.get("input")({ source: "interactive", text: "/simplify" }, ctx);
+			const injection = await handlers.get("before_agent_start")();
+			expect(Boolean(injection?.message)).toBe(shouldInject);
+		});
+	}
+
 	test("uses /simplify for repeated completion", async () => {
 		const { autocomplete, ctx, handlers } = await createHarness();
 		const first = await completeSimplify(autocomplete, "/sim");

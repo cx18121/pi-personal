@@ -586,6 +586,14 @@ export default function (pi: ExtensionAPI): void {
     const skillName = getCurrentSkillPathMap(pi, ctx.cwd).get(readPath)
     if (!skillName || loadedSkills.has(skillName)) return
 
+    const delivered = event.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+    // A successful read can still be partial or truncated. Only the complete
+    // file establishes that a later explicit invocation may skip injection.
+    if (delivered.trim() !== readFileSync(readPath, "utf8").trim()) return
+
     loadedSkills.add(skillName)
     pi.appendEntry(LOADED_SKILL_ENTRY_TYPE, {
       name: skillName,

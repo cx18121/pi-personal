@@ -11,10 +11,7 @@ case "$profile" in
     ;;
 esac
 
-if [[ $(pi --version) != "0.85.1" ]]; then
-  printf 'Expected Pi 0.85.1.\n' >&2
-  exit 1
-fi
+node "$root/scripts/check-pi-version.mjs" "$(pi --version)"
 if [[ ! -d "$root/node_modules" ]]; then
   printf 'pi-personal dependencies are not installed.\n' >&2
   exit 1

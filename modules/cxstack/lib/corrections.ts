@@ -47,7 +47,7 @@ export type CorrectionEval = {
 	expectedBehavior: string;
 	forbiddenBehavior: string[];
 	rubric: string[];
-	models: Array<"openai" | "fable">;
+	models: string[];
 };
 
 export type CorrectionIntervention = {
@@ -382,8 +382,8 @@ export function parseCorrectionProposal(value: unknown): CorrectionProposal {
 		const expectedBehavior = text(evalRecord.expectedBehavior);
 		const forbiddenBehavior = stringArray(evalRecord.forbiddenBehavior);
 		const rubric = stringArray(evalRecord.rubric);
-		const models = stringArray(evalRecord.models)?.filter((model): model is "openai" | "fable" => model === "openai" || model === "fable");
-		if (!input || !expectedBehavior || !forbiddenBehavior || !rubric || !models?.length) throw new Error("Incomplete correction eval.");
+		const models = stringArray(evalRecord.models)?.map((model) => model.trim());
+		if (!input || !expectedBehavior || !forbiddenBehavior || !rubric || !models?.length || models.some((model) => !model)) throw new Error("Incomplete correction eval.");
 		evalCase = {
 			input: bounded(input),
 			expectedBehavior: bounded(expectedBehavior),
@@ -422,9 +422,6 @@ export function parseCorrectionProposal(value: unknown): CorrectionProposal {
 
 	const needsEval = proofKind === "new_mechanical_eval" || proofKind === "new_live_eval";
 	if (needsEval !== Boolean(evalCase)) throw new Error("Correction proposal has an inconsistent eval proof.");
-	if (evalCase && (!evalCase.models.includes("openai") || !evalCase.models.includes("fable"))) {
-		throw new Error("Correction eval must cover OpenAI and Fable.");
-	}
 	if (!evalCase && !intervention) throw new Error("Correction proposal has no action.");
 	return {
 		proof: { kind: proofKind, reason: bounded(proofReason) },

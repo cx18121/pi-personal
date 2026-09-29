@@ -142,6 +142,24 @@ describe("correction storage", () => {
 		})).toThrow("targetProject");
 	});
 
+	test("preserves explicitly required eval models without imposing a family", () => {
+		const proposal = (models: string[]) => parseCorrectionProposal({
+			proof: { kind: "new_live_eval", reason: "Check the required models." },
+			eval: {
+				input: "Review this change.",
+				expectedBehavior: "Find the defect.",
+				forbiddenBehavior: ["Approve the defect."],
+				rubric: ["Identifies the defect."],
+				models,
+			},
+		});
+		expect(proposal(["openai-codex/new-model"]).eval?.models).toEqual(["openai-codex/new-model"]);
+		const required = ["openai-codex/new-model", "anthropic/new-model"];
+		expect(proposal(required).eval?.models).toEqual(required);
+		expect(() => proposal([])).toThrow("Incomplete correction eval");
+		expect(() => proposal(["  "])).toThrow("Incomplete correction eval");
+	});
+
 	test("keeps legacy applied outcomes terminal", () => {
 		const recorded = candidate();
 		const pattern = {

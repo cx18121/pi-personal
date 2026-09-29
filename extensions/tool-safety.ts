@@ -82,7 +82,8 @@ export default function registerToolSafety(pi: ExtensionAPI) {
 					onUpdate,
 					ctx,
 				);
-				resetFailures();
+				if (result.isError) consecutiveFailures += 1;
+				else resetFailures();
 				return result;
 			} catch (error) {
 				if (!isAbort(error)) consecutiveFailures += 1;

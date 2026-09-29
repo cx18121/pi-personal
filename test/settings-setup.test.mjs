@@ -34,7 +34,7 @@ test("merges the platform profile and local package overlay", () => {
   expect(runSettings(home, "macos").status).toBe(0);
   const settings = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "settings.json"), "utf8"));
 
-  expect(settings.defaultProvider).toBe("anthropic");
+  expect(settings.defaultProvider).toBe("openai-codex");
   expect(settings.outputPad).toBe(9);
   expect(settings.packages.at(-1)).toBe("local-package");
   expect(settings.lastChangelogVersion).toBe("0.85.0");

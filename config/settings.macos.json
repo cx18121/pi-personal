@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-fable-5-1",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-6-sol",
   "outputPad": 0,
   "editorPaddingX": 0,
   "hideThinkingBlock": false,
@@ -10,8 +10,7 @@
       "source": "../../Projects/personal/pi-personal",
       "extensions": [
         "+extensions/answer.ts",
-        "+extensions/intercom-toggle.ts",
-        "+extensions/remember-last-model.ts"
+        "+extensions/intercom-toggle.ts"
       ]
     },
     "npm:@juicesharp/rpiv-todo",

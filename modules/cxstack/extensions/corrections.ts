@@ -2,13 +2,11 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	type Api,
 	type Message,
-	type Model,
 	StringEnum,
 	Type,
 } from "@earendil-works/pi-ai";
-import { complete } from "@earendil-works/pi-ai/compat";
+import { completeHelper } from "../../../lib/model-policy.js";
 import {
 	getAgentDir,
 	type ExtensionAPI,
@@ -88,51 +86,22 @@ const sameProject = (left: string, right: string) => {
 	}
 };
 
-const versionKey = (id: string) => (id.match(/\d+/g) ?? []).map(Number);
-const newerVersionFirst = (left: string, right: string) => {
-	const [leftKey, rightKey] = [versionKey(left), versionKey(right)];
-	for (let index = 0; index < Math.max(leftKey.length, rightKey.length); index += 1) {
-		const difference = (rightKey[index] ?? -1) - (leftKey[index] ?? -1);
-		if (difference !== 0) return difference;
-	}
-	return right.localeCompare(left);
-};
-
-export function selectFableModel(models: Model<Api>[]): Model<Api> {
-	const model = models
-		.filter(({ provider, id }) => provider === "anthropic" && id.includes("fable"))
-		.sort((left, right) => newerVersionFirst(left.id, right.id))[0];
-	if (!model) throw new Error("Correction grouping requires a scoped Anthropic Fable model; found none.");
-	return model;
-}
-
-function fableModel(ctx: ExtensionContext): Model<Api> {
-	return selectFableModel(ctx.scopedModels.map(({ model }) => model));
-}
-
 async function defaultGroup(
 	candidates: CorrectionCandidate[],
 	ctx: ExtensionContext,
 	signal: AbortSignal,
 	context: CorrectionGroupingContext,
 ): Promise<CorrectionPattern[]> {
-	const model = fableModel(ctx);
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-	if (!auth.ok) throw new Error(`Correction grouping could not authenticate Fable: ${auth.error}`);
 	const message: Message = {
 		role: "user",
 		content: [{ type: "text", text: groupingInput(candidates, context) }],
 		timestamp: Date.now(),
 	};
-	const response = await complete(
-		model,
+	const response = await completeHelper(
+		"corrections", ctx,
 		{ systemPrompt: groupingInstructions, messages: [message] },
-		{ apiKey: auth.apiKey, headers: auth.headers, signal },
+		signal,
 	);
-	if (response.stopReason === "aborted") throw new Error("Correction grouping was cancelled.");
-	if (response.stopReason === "error") {
-		throw new Error(response.errorMessage ?? "Correction grouping failed without provider details.");
-	}
 	const output = response.content
 		.flatMap((part) => part.type === "text" ? [part.text] : [])
 		.join("\n")
@@ -394,7 +363,7 @@ export default function registerCorrections(
 				expectedBehavior: Type.String({ minLength: 1, maxLength: 600 }),
 				forbiddenBehavior: Type.Array(Type.String({ minLength: 1, maxLength: 600 })),
 				rubric: Type.Array(Type.String({ minLength: 1, maxLength: 600 })),
-				models: Type.Array(StringEnum(["openai", "fable"] as const)),
+				models: Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Models required by this eval, preferably exact provider/model IDs from current configuration. An explicitly cross-family eval stays pending until all required families are tested." }),
 			})),
 			intervention: Type.Optional(Type.Object({
 				action: StringEnum(["add", "change", "remove"] as const),

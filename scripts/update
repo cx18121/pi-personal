@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+profile=${1:-}
+case "$profile" in
+  macos|linux) ;;
+  *) printf 'usage: %s {macos|linux}\n' "$0" >&2; exit 2 ;;
+esac
+
+# Pi itself is managed by mise/dotfiles. This updates installed extensions and
+# the model catalog without changing the session default or invoking bootstrap.
+pi update --extensions --approve
+pi update --models
+npm --prefix "$root" test
+npm --prefix "$root" run typecheck
+"$root/scripts/check-setup" "$profile"

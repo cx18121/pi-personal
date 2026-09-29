@@ -2,15 +2,11 @@
 
 Keep the active parent model. Do not switch it automatically.
 
-Use child models only for bounded contributions that earn their cost. These are soft defaults:
+Use child models only for bounded contributions that earn their cost. Model choices live in `~/.pi/agent/settings.json`, not in workflow instructions. The automatic model policy in the current prompt supplies disabled providers and ordered review or implementation preferences from `cxModels.overrides`. `session` means the current model. Use the first permitted, available configured preference. Without an override, choose from the permitted scoped models for the task, or inherit the session model.
 
-- Prefer GPT-6 Sol for implementation, debugging, tooling, and exact procedures.
-- Prefer Claude Opus 5.5 for intent, product and design judgment, synthesis, long context, and demanding independent judgment.
-- Prefer the complementary family for an independent challenge.
+Prefer a complementary family for an independent challenge. If it is unavailable, a fresh same-family reviewer may continue ordinary review with that limitation disclosed. An explicitly cross-family experiment remains incomplete until its required families have been tested.
 
-Let the task override these defaults when another model is a better fit. Do not build a classifier or route by keywords.
-
-`spawn_agent` offers the exact models allowed by the current Pi configuration. For an independent challenge from an OpenAI parent, choose Claude Opus 5.5. From a Claude parent, choose GPT-6 Sol. A provider authentication or quota failure blocks the child result. Report it instead of routing through another provider.
+`spawn_agent` lists scoped choices, which may still include temporarily disabled providers. The automatic-use guard blocks those providers without restricting manual main-session selection. On authentication or quota failure, report the failure and use only the next configured permitted fallback. If the configured choices are exhausted, report the blocker. Do not rewrite persistent settings to make a task succeed.
 
 Give each child a short `task_name` and a self-contained `message` with current primary evidence, exact source paths, authority boundary, success condition, and output contract. Children do not load project context files automatically, so include every relevant project rule in the message. Independent reviews use fresh context by construction. One child is enough unless separate questions genuinely need separate contexts.
 

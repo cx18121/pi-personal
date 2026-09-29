@@ -4,6 +4,10 @@ min_version = "2026.9.9"
 description = "Install portable Pi settings and package dependencies"
 run = "./scripts/bootstrap"
 
+[tasks.update]
+description = "Update installed extensions and model catalog, then run checks"
+run = "./scripts/update"
+
 [tasks.check]
 description = "Verify the portable Pi setup"
 run = "./scripts/check-setup"

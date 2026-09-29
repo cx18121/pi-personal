@@ -88,8 +88,8 @@ describe("tool safety", () => {
 		const executionContext = context(root);
 		for (const handler of handlers.get("agent_start") ?? []) await handler({}, executionContext);
 
-		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).rejects.toThrow();
-		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).rejects.toThrow();
+		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
+		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
 		await expect(bash.execute("failure-3", { command }, undefined, undefined, executionContext)).rejects.toThrow(
 			"Blocked a third consecutive identical failed bash command",
 		);
@@ -104,10 +104,10 @@ describe("tool safety", () => {
 		const bash = tools.get("bash");
 		const executionContext = context(root);
 
-		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).rejects.toThrow();
-		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).rejects.toThrow();
+		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
+		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
 		await handlers.get("tool_call")?.[0]({ toolName: "edit", input: {} }, executionContext);
-		await expect(bash.execute("failure-3", { command }, undefined, undefined, executionContext)).rejects.toThrow();
+		await expect(bash.execute("failure-3", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
 		expect(await readFile(marker, "utf8")).toBe("xxx");
 	});
 
@@ -118,8 +118,8 @@ describe("tool safety", () => {
 		const bash = tools.get("bash");
 		const executionContext = context(root);
 
-		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).rejects.toThrow();
-		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).rejects.toThrow();
+		await expect(bash.execute("failure-1", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
+		await expect(bash.execute("failure-2", { command }, undefined, undefined, executionContext)).resolves.toMatchObject({ isError: true });
 		await expect(bash.execute("failure-3", { command }, undefined, undefined, executionContext)).rejects.toThrow(
 			"Blocked a third consecutive identical failed bash command",
 		);

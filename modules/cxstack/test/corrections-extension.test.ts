@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import type { CorrectionReviewTheme } from "../components/corrections-review.ts";
-import registerCorrections, { selectFableModel } from "../extensions/corrections.ts";
+import registerCorrections from "../extensions/corrections.ts";
 import {
 	correctionState,
 	correctionsFile,
@@ -516,19 +516,4 @@ test("guidance changes invalidate the previous grouping snapshot", async () => {
 	await h.handlers.get("session_start")?.({}, h.context);
 	await settle();
 	expect(calls).toBe(2);
-});
-
-test("selects the newest scoped Fable model and ignores other models", () => {
-	const model = (provider: string, id: string) => ({ provider, id }) as never;
-	expect(selectFableModel([
-		model("openai-codex", "gpt-5.6-sol"),
-		model("anthropic", "claude-fable-5"),
-		model("anthropic", "claude-opus-5"),
-		model("anthropic", "claude-fable-5-1"),
-	])).toMatchObject({ provider: "anthropic", id: "claude-fable-5-1" });
-	expect(selectFableModel([
-		model("anthropic", "claude-fable-5-1"),
-		model("anthropic", "claude-fable-6"),
-	])).toMatchObject({ id: "claude-fable-6" });
-	expect(() => selectFableModel([model("anthropic", "claude-opus-5")])).toThrow("found none");
 });

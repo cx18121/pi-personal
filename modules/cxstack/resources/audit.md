@@ -40,7 +40,7 @@ For each recurring failure, find what allowed it and prefer prevention in this o
 3. Change existing CXStack guidance when code cannot enforce the behavior.
 4. Depend on review only when the earlier options do not fit.
 
-Propose exact changes, but do not edit CXStack, write memory, change skills, or add papercuts before selection. Wait for explicit approval.
+Propose exact changes, but do not edit CXStack, write memory, or change skills before selection. Wait for explicit approval.
 
 CXStack source root: `{{CXSTACK_ROOT}}`
 

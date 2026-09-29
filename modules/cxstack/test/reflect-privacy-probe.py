@@ -166,7 +166,7 @@ calls = tool_calls(parent_rows, reflect_index)
 child_runs = [arguments for name, arguments in calls if name == 'spawn_agent']
 child_tasks = [arguments.get('message', '') for arguments in child_runs]
 child_models = [arguments.get('model') for arguments in child_runs]
-mutation_tools = {'memory_write', 'papercut', 'write', 'edit', 'mcp'}
+mutation_tools = {'memory_write', 'write', 'edit', 'mcp'}
 parent_text = parent.read_text()
 project_after = file_inventory(package_root, excluded={'.git', 'node_modules'})
 global_skills_after = file_inventory(global_skills_root) if global_skills_root.exists() else {}

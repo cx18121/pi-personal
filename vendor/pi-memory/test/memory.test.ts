@@ -5,11 +5,11 @@ import * as path from "node:path";
 import {
   INDEX_MAX_BYTES,
   assertMemoryMutationPermission,
-  assertPapercutPermission,
   assertScratchpadPermission,
   atomicWriteFile,
   buildStartupContext,
-  checklistFilePath,
+  scratchpadFilePath,
+  scopeInventory,
   ensurePrivateDir,
   forgetMemory,
   legacyProjectId,
@@ -105,15 +105,15 @@ describe("project identity and scope", () => {
     const memoryDir = path.join(tempDir, "memory");
     const legacyDir = path.join(memoryDir, "projects", legacyProjectId(tempDir));
     writeMemory({ dir: legacyDir, content: "memory from the path-based identity" });
-    atomicWriteFile(checklistFilePath(legacyDir, "scratchpad"), "- [ ] migrated task\n");
-    atomicWriteFile(checklistFilePath(legacyDir, "papercuts"), "- [ ] migrated papercut\n");
+    atomicWriteFile(scratchpadFilePath(legacyDir), "- [ ] migrated task\n");
+    atomicWriteFile(path.join(legacyDir, "PAPERCUTS.md"), "- [ ] migrated papercut\n");
 
     const locations = resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir });
 
     expect(locations.projectDir).not.toBe(legacyDir);
     expect(readText(path.join(locations.projectDir!, "MEMORY.md"))).toContain("path-based identity");
-    expect(readText(checklistFilePath(locations.projectDir!, "scratchpad"))).toContain("migrated task");
-    expect(readText(checklistFilePath(locations.projectDir!, "papercuts"))).toContain("migrated papercut");
+    expect(readText(scratchpadFilePath(locations.projectDir!))).toContain("migrated task");
+    expect(readText(path.join(locations.projectDir!, "PAPERCUTS.md"))).toContain("migrated papercut");
     expect(fs.existsSync(legacyDir)).toBe(false);
   });
 
@@ -196,13 +196,10 @@ describe("roles and permissions", () => {
     expect(() => resolveMemoryDir({})).toThrow("no home directory");
   });
 
-  test("keeps subagents read-only except papercut append", () => {
+  test("keeps subagents read-only", () => {
     expect(() => assertMemoryMutationPermission("subagent")).toThrow("cannot mutate");
     expect(() => assertScratchpadPermission("subagent", "add")).toThrow("cannot mutate");
     expect(() => assertScratchpadPermission("subagent", "list")).not.toThrow();
-    expect(() => assertPapercutPermission("subagent", "add")).not.toThrow();
-    expect(() => assertPapercutPermission("subagent", "list")).not.toThrow();
-    expect(() => assertPapercutPermission("subagent", "resolve")).toThrow("cannot edit or resolve");
   });
 });
 
@@ -423,7 +420,7 @@ describe("topic names, search, and scope", () => {
       expect(result!.excerpt, query).toContain(expected);
     }
     expect(searchMemory(locations, "zzzznothere")).toEqual([]);
-    atomicWriteFile(checklistFilePath(locations.projectDir!, "papercuts"), "- [ ] papercutonlytoken retrieval failure\n");
+    atomicWriteFile(path.join(locations.projectDir!, "PAPERCUTS.md"), "- [ ] papercutonlytoken retrieval failure\n");
     expect(searchMemory(locations, "papercutonlytoken")).toEqual([]);
   });
 
@@ -481,11 +478,11 @@ describe("topic names, search, and scope", () => {
   });
 });
 
-describe("scratchpads and papercuts", () => {
+describe("scratchpads", () => {
   test("defaults to project scope and preserves handwritten lines", () => {
     const locations = locationsWithProject();
     expect(resolveScope(locations).scope).toBe("project");
-    const filePath = checklistFilePath(locations.projectDir!, "scratchpad");
+    const filePath = scratchpadFilePath(locations.projectDir!);
     atomicWriteFile(filePath, "# Scratchpad\n\nHandwritten context\n- [ ] First task\n  - detail\n");
     mutateChecklist({ filePath, action: "done", text: "First" });
     mutateChecklist({ filePath, action: "add", text: "Second task" });
@@ -509,18 +506,23 @@ describe("scratchpads and papercuts", () => {
     mutateChecklist({ filePath, action: "done", text: "After Charlie finishes PAN-307 cleanup" });
     expect(readText(filePath)).toContain("- [ ] After Charlie finishes PAN-306 cleanup");
     expect(readText(filePath)).toContain("- [x] After Charlie finishes PAN-307 cleanup");
-    expect(() =>
-      mutateChecklist({ filePath, action: "edit", text: "After Charlie finishes", replacement: "replacement" }),
-    ).toThrow("Multiple matching items found");
   });
 
-  test("supports root papercut edit and resolve", () => {
-    const filePath = path.join(tempDir, "PAPERCUTS.md");
-    mutateChecklist({ filePath, action: "add", text: "slow startup" });
-    mutateChecklist({ filePath, action: "edit", text: "startup", replacement: "slow project startup" });
-    mutateChecklist({ filePath, action: "resolve", text: "project startup" });
-    expect(readText(filePath)).toContain("- [x] slow project startup");
+  test("supports scratchpad undo, clear and list without touching archives", () => {
+    const filePath = scratchpadFilePath(tempDir);
+    const archive = path.join(tempDir, "PAPERCUTS.md");
+    const archived = "- [ ] historical incident\n";
+    atomicWriteFile(archive, archived);
+    mutateChecklist({ filePath, action: "add", text: "task" });
+    mutateChecklist({ filePath, action: "done", text: "task" });
+    mutateChecklist({ filePath, action: "undo", text: "task" });
+    expect(mutateChecklist({ filePath, action: "list" })).toContain("- [ ] task");
+    mutateChecklist({ filePath, action: "done", text: "task" });
+    mutateChecklist({ filePath, action: "clear_done" });
+    expect(parseChecklist(readText(filePath))).toEqual([]);
+    expect(readText(archive)).toBe(archived);
   });
+
 });
 
 describe("forget and restore", () => {
@@ -636,6 +638,38 @@ describe("startup context and compaction handoff", () => {
     }
   });
 
+  test("exposes memory and scratchpads while leaving archives inert", async () => {
+    const oldMemoryDir = process.env.PI_MEMORY_DIR;
+    const memoryDir = path.join(tempDir, "archive-memory");
+    process.env.PI_MEMORY_DIR = memoryDir;
+    const locations = resolveLocations(tempDir, { PI_MEMORY_DIR: memoryDir });
+    const archive = path.join(locations.globalDir, "PAPERCUTS.md");
+    const archived = "- [ ] archiveonlytoken\n";
+    atomicWriteFile(archive, archived);
+    try {
+      const tools = new Map<string, any>();
+      registerMemory({ on() {}, registerTool(tool: any) { tools.set(tool.name, tool); } } as any);
+      expect([...tools.keys()].sort()).toEqual([
+        "memory_forget", "memory_read", "memory_restore", "memory_search", "memory_status", "memory_write", "scratchpad",
+      ]);
+      expect(JSON.stringify([...tools.values()])).not.toMatch(/papercut/i);
+      const context = { cwd: tempDir, sessionManager: { getSessionId: () => "root-session" } };
+      const status = await tools.get("memory_status").execute(
+        "test", {}, new AbortController().signal, undefined, context,
+      );
+      expect(status.isError).toBeUndefined();
+      expect(status.content[0].text).not.toMatch(/papercut/i);
+      expect(scopeInventory(locations.globalDir)).toMatchObject({ files: 0, bytes: 0 });
+      expect(status.details.global).not.toHaveProperty("papercutsOpen");
+      expect(searchMemory(locations, "archiveonlytoken")).toEqual([]);
+      expect(buildStartupContext({ locations, role: "root" })).not.toMatch(/papercut|archiveonlytoken/i);
+      expect(readText(archive)).toBe(archived);
+    } finally {
+      if (oldMemoryDir === undefined) delete process.env.PI_MEMORY_DIR;
+      else process.env.PI_MEMORY_DIR = oldMemoryDir;
+    }
+  });
+
   test("targets a nested repository explicitly without falling back to global", async () => {
     const memoryDir = path.join(tempDir, "memory");
     const repo = path.join(tempDir, "nested", "repo");
@@ -656,8 +690,8 @@ describe("startup context and compaction handoff", () => {
         cwd: tempDir,
         sessionManager: { getSessionId: () => "root-session" },
       };
-      const papercut = tools.get("papercut");
-      const added = await papercut.execute(
+      const scratchpad = tools.get("scratchpad");
+      const added = await scratchpad.execute(
         "add",
         { scope: "project", projectPath: path.relative(tempDir, repo), action: "add", text: "nested target" },
         new AbortController().signal,
@@ -668,7 +702,7 @@ describe("startup context and compaction handoff", () => {
       expect(added.details.scope).toBe("project");
       expect(readText(added.details.path)).toContain("nested target");
 
-      const invalid = await papercut.execute(
+      const invalid = await scratchpad.execute(
         "invalid",
         { scope: "project", projectPath: "missing", action: "add", text: "wrong scope" },
         new AbortController().signal,
@@ -677,7 +711,7 @@ describe("startup context and compaction handoff", () => {
       );
       expect(invalid.isError).toBeTrue();
       expect(invalid.content[0].text).toContain("Explicit project path is not inside a Git repository");
-      expect(readText(checklistFilePath(path.join(memoryDir, "global"), "papercuts"))).toBe("");
+      expect(readText(scratchpadFilePath(path.join(memoryDir, "global")))).toBe("");
 
       process.env.PI_MEMORY_SUBAGENT_MODE = "subagent";
       const blocked = await tools.get("memory_read").execute(
@@ -702,13 +736,13 @@ describe("startup context and compaction handoff", () => {
     writeMemory({ dir: locations.globalDir, content: "global index fact" });
     writeMemory({ dir: locations.globalDir, target: "topic", topic: "hidden", content: "hidden topic fact" });
     writeMemory({ dir: locations.projectDir!, content: "project index fact" });
-    const projectScratch = checklistFilePath(locations.projectDir!, "scratchpad");
+    const projectScratch = scratchpadFilePath(locations.projectDir!);
     atomicWriteFile(
       projectScratch,
       "# Scratchpad\n\n## Now\n\n- continue compaction handoff\n- [ ] now checklist item\n\n## Later\n\n- [ ] open project task\n- [x] completed project task\n",
     );
-    atomicWriteFile(checklistFilePath(locations.globalDir, "scratchpad"), "- [ ] global task\n");
-    atomicWriteFile(checklistFilePath(locations.projectDir!, "papercuts"), "- [ ] hidden papercut\n");
+    atomicWriteFile(scratchpadFilePath(locations.globalDir), "- [ ] global task\n");
+    atomicWriteFile(path.join(locations.projectDir!, "PAPERCUTS.md"), "- [ ] hidden papercut\n");
 
     const context = buildStartupContext({ locations, role: "root", autoCapture: true });
     expect(context).toContain("global index fact");
@@ -722,7 +756,7 @@ describe("startup context and compaction handoff", () => {
     expect(context).not.toContain("hidden topic fact");
     expect(context).not.toContain("hidden papercut");
     expect(context).toContain("visible memory_write tool calls");
-    expect(context).toContain("plausible structural improvement");
+    expect(context).not.toMatch(/papercut|plausible structural improvement/i);
     expect(context).toContain("explicit approval-gated review");
     expect(context.indexOf("explicit approval-gated review")).toBeGreaterThan(
       context.indexOf("visible memory_write tool calls"),

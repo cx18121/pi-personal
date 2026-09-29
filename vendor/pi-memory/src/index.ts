@@ -3,11 +3,10 @@ import { StringEnum, Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   assertMemoryMutationPermission,
-  assertPapercutPermission,
   assertScratchpadPermission,
   autoCaptureEnabled,
   buildStartupContext,
-  checklistFilePath,
+  scratchpadFilePath,
   findRecoveryScope,
   forgetMemory,
   listTopics,
@@ -111,11 +110,11 @@ export default function registerMemory(pi: ExtensionAPI) {
   pi.registerTool({
     name: "memory_read",
     label: "Memory Read",
-    description: "Read global or active-project memory, topics, scratchpad, or papercuts.",
+    description: "Read global or active-project memory, topics, or scratchpad.",
     parameters: Type.Object({
       scope: scopeSchema,
       projectPath: projectPathSchema,
-      target: StringEnum(["memory", "topic", "topics", "scratchpad", "papercuts"] as const),
+      target: StringEnum(["memory", "topic", "topics", "scratchpad"] as const),
       topic: Type.Optional(Type.String({ description: "Lowercase topic slug for target=topic." })),
     }),
     async execute(_id, params, _signal, _update, ctx) {
@@ -131,7 +130,7 @@ export default function registerMemory(pi: ExtensionAPI) {
         const filePath =
           params.target === "memory" || params.target === "topic"
             ? memoryFilePath(state.dir, params.target, params.topic)
-            : checklistFilePath(state.dir, params.target);
+            : scratchpadFilePath(state.dir);
         const content = readText(filePath);
         return textResult(content || `${path.basename(filePath)} is empty or does not exist.`, {
           path: filePath,
@@ -240,7 +239,7 @@ export default function registerMemory(pi: ExtensionAPI) {
       try {
         const state = scopePath(ctx, params.scope, params.projectPath);
         assertScratchpadPermission(state.role, params.action);
-        const filePath = checklistFilePath(state.dir, "scratchpad");
+        const filePath = scratchpadFilePath(state.dir);
         const content = mutateChecklist({
           filePath,
           action: params.action,
@@ -248,41 +247,6 @@ export default function registerMemory(pi: ExtensionAPI) {
           sessionId: ctx.sessionManager.getSessionId(),
         });
         return textResult(content || "Scratchpad is empty.", { path: filePath, scope: state.scope });
-      } catch (error) {
-        return errorResult(error);
-      }
-    },
-  });
-
-  pi.registerTool({
-    name: "papercut",
-    label: "Papercut",
-    description:
-      "Report and manage small workflow friction. Add even a first occurrence when a tool, prompt, skill, helper, or repository change could plausibly prevent it. Include the activity, friction, and plausible structural improvement. Skip incidental mistakes with no structural lesson and never include secrets. During an explicit approval-gated review, propose the entry and wait for selection. Any agent may append or list; only root agents may edit, resolve, or clear items.",
-    promptGuidelines: [
-      "papercut: treat entries as evidence, not a backlog. Before recommending a repair, confirm the current failure, frequency, consequence, and owner. Compare doing nothing or deferring. Target the observed failure rather than the suggested remedy.",
-      "papercut cleanup: when clearing resolved entries is authorized, clear them directly without reviewing them again. Resolve historical items from current code when it settles the recorded issue. Run additional checks only when they could change the resolution.",
-    ],
-    parameters: Type.Object({
-      scope: scopeSchema,
-      projectPath: projectPathSchema,
-      action: StringEnum(["add", "done", "undo", "clear_done", "list", "edit", "resolve"] as const),
-      text: Type.Optional(Type.String({ description: "Item text or substring to match." })),
-      replacement: Type.Optional(Type.String({ description: "Replacement text for edit." })),
-    }),
-    async execute(_id, params, _signal, _update, ctx) {
-      try {
-        const state = scopePath(ctx, params.scope, params.projectPath);
-        assertPapercutPermission(state.role, params.action);
-        const filePath = checklistFilePath(state.dir, "papercuts");
-        const content = mutateChecklist({
-          filePath,
-          action: params.action,
-          text: params.text,
-          replacement: params.replacement,
-          sessionId: ctx.sessionManager.getSessionId(),
-        });
-        return textResult(content || "Papercuts are empty.", { path: filePath, scope: state.scope });
       } catch (error) {
         return errorResult(error);
       }
@@ -306,8 +270,6 @@ export default function registerMemory(pi: ExtensionAPI) {
           `- Role: ${role}`,
           `- Durable memory writes: ${role === "root" ? "allowed" : "read-only"}`,
           `- Scratchpad writes: ${role === "root" ? "allowed" : "read-only"}`,
-          `- Papercut append: allowed`,
-          `- Papercut edit/resolve: ${role === "root" ? "allowed" : "read-only"}`,
           `- Project: ${locations.project ? `${locations.project.id} (${locations.project.commonRoot})` : "none"}`,
           "",
           `- Global: ${global.dir} — ${global.files} files, ${global.bytes} bytes, ${global.topics} topics`,

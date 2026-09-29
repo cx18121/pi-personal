@@ -12,8 +12,8 @@ The fork keeps the upstream tool shape and deletion recovery while replacing dai
 
 ```text
 ~/.pi/agent/memory/
-  global/{MEMORY.md,SCRATCHPAD.md,PAPERCUTS.md,topics/,recovery/}
-  projects/<initial-repo-name>-<stable-id>/{MEMORY.md,SCRATCHPAD.md,PAPERCUTS.md,topics/,recovery/}
+  global/{MEMORY.md,SCRATCHPAD.md,topics/,recovery/}
+  projects/<initial-repo-name>-<stable-id>/{MEMORY.md,SCRATCHPAD.md,topics/,recovery/}
 ```
 
 On first use, a repository receives an immutable project ID in its shared local Git config under `pi.memory-id`. Git worktrees therefore share memory, and moving or renaming the repository does not change its memory location. Separate clones receive separate IDs. Existing path-based project memory is moved to the stable location when the ID is first created. If Git metadata is read-only, memory keeps using the path-based identity until the ID can be stored. If both locations contain data, migration stops with an explicit error rather than hiding or merging either directory. Outside Git, only global memory is available.
@@ -36,4 +36,6 @@ Search uses MiniSearch BM25+ over cleaned body text, topic and heading names, an
 
 Normal search runs before typo correction. Prefix matching applies only to the final term, and only when it has at least three characters. One-edit fuzzy matching is a fallback for terms with at least five letters or numbers. Exact phrase checks use the original stored text and respect identifier boundaries. Results include an excerpt centred on the matching line or code fence.
 
-Scratchpads hold unfinished work. Startup context includes the active project's `Now` handoff and unchecked items. Only explicit scratchpad tool calls change shared project scratchpads. Session compaction stays in the session and does not write to project storage. Papercuts hold observed workflow friction. Agents are told to record even a first occurrence when a tool, prompt, skill, helper, or repository change could plausibly prevent it. An entry names the activity, friction, and plausible structural improvement. Incidental mistakes with no structural lesson are skipped. During an explicit approval-gated review, durable writes remain proposals until the user selects them. Papercuts remain readable through their tools but are excluded from normal memory search so reports cannot become search results themselves.
+Scratchpads hold unfinished work. Startup context includes the active project's `Now` handoff and unchecked items. Only explicit scratchpad tool calls change shared project scratchpads. Session compaction stays in the session and does not write to project storage.
+
+Existing `PAPERCUTS.md` files are inert archives. The extension does not expose tools for them or include them in startup context, search, or inventory. Their contents are left unchanged.

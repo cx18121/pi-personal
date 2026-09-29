@@ -367,7 +367,7 @@ export default function registerCorrections(
 			})),
 			intervention: Type.Optional(Type.Object({
 				action: StringEnum(["add", "change", "remove"] as const),
-				owner: StringEnum(["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory", "papercut"] as const),
+				owner: StringEnum(["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory"] as const),
 				scope: StringEnum(["project", "global"] as const),
 				targetProject: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
 				exactChange: Type.String({ minLength: 1, maxLength: 1000 }),

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 export const CORRECTION_GROUPING_VERSION = 3;
 
 export type CorrectionStrength = "weak" | "strong";
-export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory" | "papercut";
+export type CorrectionOwner = "code_or_test" | "agents" | "project_docs" | "cxstack" | "skill" | "memory";
 export type CorrectionProofKind = "existing_test" | "new_mechanical_eval" | "new_live_eval" | "direct_observation" | "no_additional_proof";
 export type CorrectionDecision = "accepted" | "rejected" | "deferred" | "already_fixed" | "duplicate";
 export type CorrectionOutcome = "applied" | "verified" | "rejected_by_proof";
@@ -400,7 +400,7 @@ export function parseCorrectionProposal(value: unknown): CorrectionProposal {
 		const action = ["add", "change", "remove"].includes(String(interventionRecord.action))
 			? interventionRecord.action as CorrectionIntervention["action"]
 			: undefined;
-		const owner = ["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory", "papercut"].includes(String(interventionRecord.owner))
+		const owner = ["code_or_test", "agents", "project_docs", "cxstack", "skill", "memory"].includes(String(interventionRecord.owner))
 			? interventionRecord.owner as CorrectionOwner
 			: undefined;
 		const scope = interventionRecord.scope === "project" || interventionRecord.scope === "global" ? interventionRecord.scope : undefined;

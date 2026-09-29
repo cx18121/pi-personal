@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -53,6 +53,23 @@ describe("correction storage", () => {
 		expect(correctionState(readCorrectionEvents(file)).candidates).toHaveLength(1);
 		appendCorrectionEvent(file, { type: "candidate_undone", at: recorded.createdAt, candidateId: recorded.id });
 		expect(correctionState(readCorrectionEvents(file)).candidates).toEqual([]);
+	});
+
+	test("reads historical papercut proposals but rejects new ones", () => {
+		const root = mkdtempSync(join(tmpdir(), "corrections-"));
+		roots.push(root);
+		const file = join(root, "events.jsonl");
+		const proposal = {
+			proof: { kind: "direct_observation", reason: "Historical observation." },
+			intervention: {
+				action: "add", owner: "papercut", scope: "global",
+				exactChange: "Record the old incident.", whyThisOwner: "Historical destination.",
+			},
+		};
+		const event = { type: "proposal_authored", at: "2026-09-01T00:00:00Z", patternId: "historical", proposal };
+		writeFileSync(file, JSON.stringify(event) + "\n");
+		expect(readCorrectionEvents(file)).toEqual([event]);
+		expect(() => parseCorrectionProposal(proposal)).toThrow("Incomplete correction intervention");
 	});
 
 	test("extracts and hides model-authored correction markers", () => {

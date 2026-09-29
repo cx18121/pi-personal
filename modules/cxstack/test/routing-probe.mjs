@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const kernel = readFileSync(join(root, "resources/kernel.md"), "utf8");
 const cases = [
 	{ id: "explain", prompt: "Explain the difference between createdAt and processedAt.", mode: "direct" },
-	{ id: "recommend", prompt: "What papercut batch should we do next?", mode: "direct" },
+	{ id: "recommend", prompt: "Which small tooling improvements are worth doing next?", mode: "direct" },
 	{ id: "confidence", prompt: "Are you sure this helper name is better?", mode: "direct" },
 	{ id: "housekeeping", prompt: "Consolidate duplicate entries in a local Markdown checklist.", mode: "direct" },
 	{ id: "small-fix", prompt: "Fix one typo in a local README.", mode: "direct" },

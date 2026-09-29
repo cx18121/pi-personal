@@ -19,7 +19,6 @@ export type MemoryScope = "global" | "project";
 export type AgentRole = "root" | "subagent";
 export type MemoryTarget = "memory" | "topic";
 export type ChecklistAction = "add" | "done" | "undo" | "clear_done" | "list";
-export type PapercutAction = ChecklistAction | "edit" | "resolve";
 
 export type MemoryEnvironment = NodeJS.ProcessEnv;
 
@@ -480,8 +479,8 @@ export function memoryFilePath(dir: string, target: MemoryTarget, topic?: string
   return path.join(dir, "topics", `${safeTopicSlug(topic)}.md`);
 }
 
-export function checklistFilePath(dir: string, kind: "scratchpad" | "papercuts") {
-  return path.join(dir, kind === "scratchpad" ? "SCRATCHPAD.md" : "PAPERCUTS.md");
+export function scratchpadFilePath(dir: string) {
+  return path.join(dir, "SCRATCHPAD.md");
 }
 
 export function normalizeForDuplicate(value: string) {
@@ -532,9 +531,8 @@ export function parseChecklist(content: string): ChecklistItem[] {
     .map((match) => ({ done: match[1].toLowerCase() === "x", text: match[2] }));
 }
 
-function appendChecklistItem(content: string, text: string, sessionId: string | undefined, filePath: string) {
-  const defaultHeading = path.basename(filePath) === "PAPERCUTS.md" ? "# Papercuts" : "# Scratchpad";
-  const heading = content.trim() ? content.trimEnd() : defaultHeading;
+function appendChecklistItem(content: string, text: string, sessionId: string | undefined) {
+  const heading = content.trim() ? content.trimEnd() : "# Scratchpad";
   return `${heading}\n${metadataLine(sessionId)}\n- [ ] ${text.trim()}\n`;
 }
 
@@ -585,50 +583,31 @@ function clearDoneChecklist(content: string) {
   return output.join("\n");
 }
 
-function editChecklist(content: string, needle: string, replacement: string) {
-  const lines = content.split("\n");
-  const index = matchingChecklistIndex(lines, needle, () => true, "");
-  const match = lines[index].match(CHECKBOX_REGEX)!;
-  lines[index] = `- [${match[1].toLowerCase() === "x" ? "x" : " "}] ${replacement.trim()}`;
-  return lines.join("\n");
-}
-
 export function mutateChecklist(options: {
   filePath: string;
-  action: PapercutAction;
+  action: ChecklistAction;
   text?: string;
-  replacement?: string;
   sessionId?: string;
 }) {
   if (options.action === "list") return readText(options.filePath);
   if (options.action === "add") {
     if (!options.text?.trim()) throw new Error("Text is required for add.");
     return mutateText(options.filePath, (existing) =>
-      appendChecklistItem(existing, options.text!, options.sessionId, options.filePath),
+      appendChecklistItem(existing, options.text!, options.sessionId),
     );
   }
   if (options.action === "clear_done") {
     return mutateText(options.filePath, clearDoneChecklist);
   }
   if (!options.text?.trim()) throw new Error(`Text is required for ${options.action}.`);
-  if (options.action === "edit") {
-    if (!options.replacement?.trim()) throw new Error("Replacement is required for edit.");
-    return mutateText(options.filePath, (existing) => editChecklist(existing, options.text!, options.replacement!));
-  }
   return mutateText(options.filePath, (existing) =>
-    toggleChecklist(existing, options.text!, options.action === "done" || options.action === "resolve"),
+    toggleChecklist(existing, options.text!, options.action === "done"),
   );
 }
 
 export function assertScratchpadPermission(role: AgentRole, action: ChecklistAction) {
   if (role === "subagent" && action !== "list") {
     throw new Error("Subagents may read scratchpads but cannot mutate them.");
-  }
-}
-
-export function assertPapercutPermission(role: AgentRole, action: PapercutAction) {
-  if (role === "subagent" && !["add", "list"].includes(action)) {
-    throw new Error("Subagents may append and list papercuts but cannot edit or resolve them.");
   }
 }
 
@@ -791,19 +770,15 @@ function readDirectoryIfPresent(dir: string) {
 }
 
 function scopeMarkdownFiles(scopeDir: string) {
-  const files = ["MEMORY.md", "SCRATCHPAD.md", "PAPERCUTS.md"].map((name) => path.join(scopeDir, name));
+  const files = ["MEMORY.md", "SCRATCHPAD.md"].map((name) => path.join(scopeDir, name));
   files.push(...listTopics(scopeDir).map((topic) => path.join(scopeDir, "topics", `${topic}.md`)));
   return files;
-}
-
-function searchableMarkdownFiles(scopeDir: string) {
-  return scopeMarkdownFiles(scopeDir).filter((filePath) => path.basename(filePath) !== "PAPERCUTS.md");
 }
 
 export function searchMemory(locations: MemoryLocations, query: string, limit = 5): SearchResult[] {
   const dirs = [locations.globalDir, ...(locations.projectDir ? [locations.projectDir] : [])];
   const sources = dirs.flatMap((dir) =>
-    searchableMarkdownFiles(dir).map((filePath) => ({ path: filePath, content: readText(filePath) })),
+    scopeMarkdownFiles(dir).map((filePath) => ({ path: filePath, content: readText(filePath) })),
   );
   return searchSources(sources, query, limit);
 }
@@ -854,9 +829,8 @@ export function buildStartupContext(options: {
   return [
     "# Local memory",
     "Current code, documentation, explicit instructions, and the latest user correction override memory. Replace or remove stale memory rather than preserving conflicts.",
-    "Use a visible papercut add call when a tool, prompt, skill, helper, or repository change could plausibly prevent observed workflow friction, even on a first occurrence. State the activity, friction, and plausible structural improvement. Skip incidental mistakes and never include secrets.",
     ...capture,
-    "During an explicit approval-gated review, propose durable memory and papercut writes and wait for the user's selection instead of writing them immediately.",
+    "During an explicit approval-gated review, propose durable memory writes and wait for the user's selection instead of writing them immediately.",
     ...body,
   ].join("\n\n");
 }
@@ -876,6 +850,5 @@ export function scopeInventory(dir: string) {
     bytes: files.reduce((total, filePath) => total + fs.statSync(filePath).size, 0),
     topics: listTopics(dir).length,
     scratchpadOpen: parseChecklist(readText(path.join(dir, "SCRATCHPAD.md"))).filter((item) => !item.done).length,
-    papercutsOpen: parseChecklist(readText(path.join(dir, "PAPERCUTS.md"))).filter((item) => !item.done).length,
   };
 }

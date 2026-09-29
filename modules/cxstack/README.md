@@ -66,7 +66,7 @@ Run `/reflect` after a useful session when you want to review what should improv
 
 Reflect reads only the current session. The parent removes secrets, customer identifiers, private production data, and unrelated conversation before asking one fresh reviewer for a challenge.
 
-Reflect proposes exact changes and waits for your selection. It does not write memory, change a skill, edit project files, create tracker items, or change papercuts before approval.
+Reflect proposes exact changes and waits for your selection. It does not write memory, change a skill, edit project files, or create tracker items before approval.
 
 Reflect works whether CX is active or not.
 

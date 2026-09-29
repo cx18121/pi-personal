@@ -21,7 +21,21 @@
   "compaction": {
     "enabled": true,
     "reserveTokens": 128000,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "modelOverrides": {
+      "openai-codex/gpt-6-sol": {
+        "reserveTokens": 27200
+      },
+      "openai-codex/gpt-6-luna": {
+        "reserveTokens": 27200
+      },
+      "openai-codex/gpt-6-astra": {
+        "reserveTokens": 27200
+      },
+      "openai-codex/gpt-6.1-sol": {
+        "reserveTokens": 27200
+      }
+    }
   },
   "doubleEscapeAction": "tree",
   "tuiMode": "regular",

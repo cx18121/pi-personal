@@ -1,5 +1,6 @@
 {
   "theme": "dark",
+  "defaultTools": ["+codemode"],
   "defaultThinkingLevel": "high",
   "enabledModels": [
     "anthropic/claude-fable-5",

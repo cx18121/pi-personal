@@ -313,35 +313,18 @@ function autoDeriveBgFromTheme(theme: any): void {
 		const delRgb = parseAnsiRgb(fgDel);
 		if (!addRgb || !delRgb) return;
 
-		let addBase = { r: 0, g: 0, b: 0 };
-		let delBase = addBase;
-		if (theme.getBgAnsi) {
-			try {
-				const successBgAnsi = theme.getBgAnsi("toolSuccessBg");
-				const successParsed = parseAnsiRgb(successBgAnsi);
-				if (successParsed) {
-					addBase = successParsed;
-					delBase = successParsed;
-				}
-			} catch {}
-			try {
-				const errorParsed = parseAnsiRgb(theme.getBgAnsi("toolErrorBg"));
-				if (errorParsed) delBase = errorParsed;
-			} catch {}
-		}
-
-		const cardBase = parseAnsiRgb(BG_BASE) ?? addBase;
-		const addAccent = {
-			r: Math.round(addRgb.r * 0.2 + 70 * 0.8),
-			g: Math.round(addRgb.g * 0.2 + 200 * 0.8),
-			b: Math.round(addRgb.b * 0.2 + 90 * 0.8),
-		};
+		const cardBase = parseAnsiRgb(BG_BASE) ?? { r: 0, g: 0, b: 0 };
+		const dark = Math.max(cardBase.r, cardBase.g, cardBase.b) < 128;
+		// Saturated accents over the same neutral surface for both change types.
+		const addAccent = dark ? { r: 0, g: 180, b: 75 } : addRgb;
+		const delAccent = dark ? { r: 235, g: 35, b: 65 } : delRgb;
 		BG_ADD = mixBg(cardBase, addAccent, 0.22);
-		BG_DEL = mixBg(delBase, delRgb, 0.18);
-		BG_ADD_W = mixBg(cardBase, addAccent, 0.42);
-		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
+		BG_DEL = mixBg(cardBase, delAccent, 0.22);
+		BG_ADD_W = mixBg(cardBase, addAccent, 0.34);
+		BG_DEL_W = mixBg(cardBase, delAccent, 0.34);
 		BG_GUTTER_ADD = mixBg(cardBase, addAccent, 0.16);
-		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.12);
+		BG_GUTTER_DEL = mixBg(cardBase, delAccent, 0.16);
+
 		BG_EMPTY = BG_BASE;
 		RST = `\x1b[0m${BG_BASE}`;
 		DIVIDER = `${FG_RULE}${RST}`;
@@ -458,7 +441,7 @@ export function themeCacheKey(theme?: any): string {
 		"toolDiffRemoved",
 		"toolDiffContext",
 	];
-	const bgKeys = ["toolSuccessBg", "toolErrorBg"];
+	const bgKeys = ["toolPendingBg", "toolSuccessBg", "toolErrorBg"];
 	const parts: string[] = [];
 	for (const key of fgKeys) {
 		try {
@@ -488,8 +471,11 @@ export function resolveDiffColors(theme?: any): DiffColors {
 	if (theme?.getBgAnsi && BG_BASE === BG_DEFAULT) {
 		try {
 			const bgAnsi = theme.getBgAnsi("toolPendingBg");
-			if (parseAnsiRgb(bgAnsi)) {
-				BG_BASE = bgAnsi;
+			const base = parseAnsiRgb(bgAnsi);
+			if (base) {
+				BG_BASE = Math.max(base.r, base.g, base.b) < 128
+					? mixBg(base, { r: 0, g: 0, b: 0 }, 0.55)
+					: bgAnsi;
 				RST = `\x1b[0m${BG_BASE}`;
 			}
 		} catch {}
@@ -826,7 +812,7 @@ export async function renderUnified(
 			lastOld = line.oldNum;
 			lastNew = line.newNum;
 			const highlight = oldHighlights[oldIndex] ?? line.content;
-			emitRow(line.newNum, " ", BG_BASE, colors.fgCtx, `${BG_BASE}${DIM}${highlight}`, BG_BASE);
+			emitRow(line.newNum, " ", BG_BASE, colors.fgCtx, `${BG_BASE}${highlight}`, BG_BASE);
 			oldIndex += 1;
 			newIndex += 1;
 			index += 1;
@@ -996,7 +982,7 @@ export async function renderSplit(
 		const borderFg = isDeletion ? colors.fgDel : isAddition ? colors.fgAdd : "";
 		const border = compactGutter ? "" : borderFg ? `${borderFg}${getBorderBar()}${RST}` : `${BG_BASE} `;
 		const numFg = borderFg || FG_LNUM;
-		let body = isDeletion || isAddition ? injectBg(highlight, [], codeBg, codeBg) : `${BG_BASE}${DIM}${highlight}`;
+		let body = isDeletion || isAddition ? injectBg(highlight, [], codeBg, codeBg) : `${BG_BASE}${highlight}`;
 		if (ranges && ranges.length > 0) body = injectBg(highlight, ranges, codeBg, isDeletion ? BG_DEL_W : BG_ADD_W);
 		const gutter = `${border}${gutterBg}${lnum(number, numberWidth, numFg)}${gutterBg} ${signFg}${sign}${gutterBg} ${RST}`;
 		const continuation = `${border}${gutterBg}${" ".repeat(numberWidth + 3)}${RST}`;

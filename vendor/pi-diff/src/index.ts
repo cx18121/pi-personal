@@ -242,10 +242,7 @@ let _autoDerivePending = true;
 /** Whether user set explicit bg config (via preset or per-color overrides). */
 let _hasExplicitBgConfig = false;
 
-/** Auto-derive all diff background colors from the pi theme's fg diff colors.
- *  Reads toolSuccessBg as the add/context base and toolErrorBg as the delete base,
- *  then mixes accent colors into each. Falls back to black (0,0,0) when a theme
- *  background is unavailable; toolErrorBg falls back to toolSuccessBg. */
+/** Derive change colors over the neutral diff card, rather than the error panel. */
 function autoDeriveBgFromTheme(theme: PiTheme): void {
 	if (!theme?.getFgAnsi) return;
 	try {
@@ -255,47 +252,19 @@ function autoDeriveBgFromTheme(theme: PiTheme): void {
 		const delRgb = parseAnsiRgb(fgDel);
 		if (!addRgb || !delRgb) return;
 
-		let addBase = { r: 0, g: 0, b: 0 };
-		let delBase = addBase;
-		if (theme.getBgAnsi) {
-			try {
-				const successBgAnsi = theme.getBgAnsi("toolSuccessBg");
-				const successParsed = parseAnsiRgb(successBgAnsi);
-				if (successParsed) {
-					addBase = successParsed;
-					delBase = successParsed;
-				}
-			} catch {
-				/* no toolSuccessBg — use black */
-			}
-
-			try {
-				const errorParsed = parseAnsiRgb(theme.getBgAnsi("toolErrorBg"));
-				if (errorParsed) delBase = errorParsed;
-			} catch {
-				/* no toolErrorBg — use toolSuccessBg/black */
-			}
-		}
-
-		// Line backgrounds — visible accent mixed into the matching tool-state base (15–18%)
-		const cardBase = parseAnsiRgb(BG_BASE) ?? addBase;
-		const addAccent = {
-			r: Math.round(addRgb.r * 0.2 + 70 * 0.8),
-			g: Math.round(addRgb.g * 0.2 + 200 * 0.8),
-			b: Math.round(addRgb.b * 0.2 + 90 * 0.8),
-		};
+		const cardBase = parseAnsiRgb(BG_BASE) ?? { r: 0, g: 0, b: 0 };
+		const dark = Math.max(cardBase.r, cardBase.g, cardBase.b) < 128;
+		// Saturated accents over the same neutral surface for both change types.
+		const addAccent = dark ? { r: 0, g: 180, b: 75 } : addRgb;
+		const delAccent = dark ? { r: 235, g: 35, b: 65 } : delRgb;
 		BG_ADD = mixBg(cardBase, addAccent, 0.22);
-		BG_DEL = mixBg(delBase, delRgb, 0.18);
-
-		// Word-level highlights — more prominent (45–50%)
-		BG_ADD_W = mixBg(cardBase, addAccent, 0.42);
-		BG_DEL_W = mixBg(delBase, delRgb, 0.5);
-
-		// Gutters — slightly subtler than lines (10–12%)
+		BG_DEL = mixBg(cardBase, delAccent, 0.22);
+		BG_ADD_W = mixBg(cardBase, addAccent, 0.34);
+		BG_DEL_W = mixBg(cardBase, delAccent, 0.34);
 		BG_GUTTER_ADD = mixBg(cardBase, addAccent, 0.16);
-		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.12);
+		BG_GUTTER_DEL = mixBg(cardBase, delAccent, 0.16);
 
-		// Empty filler and context — match the success/context base
+		// Empty filler and context use the neutral card surface.
 		BG_EMPTY = BG_BASE;
 
 		// Update RST to re-apply base bg after every reset — prevents black
@@ -546,7 +515,7 @@ function themeCacheKey(theme?: PiTheme): string {
 		"toolDiffRemoved",
 		"toolDiffContext",
 	];
-	const bgKeys = ["toolSuccessBg", "toolErrorBg"];
+	const bgKeys = ["toolPendingBg", "toolSuccessBg", "toolErrorBg"];
 	const parts: string[] = [];
 	for (const key of fgKeys) {
 		try {
@@ -579,8 +548,11 @@ function resolveDiffColors(theme?: PiTheme): DiffColors {
 	if (theme?.getBgAnsi && BG_BASE === BG_DEFAULT) {
 		try {
 			const bgAnsi = theme.getBgAnsi("toolPendingBg");
-			if (parseAnsiRgb(bgAnsi)) {
-				BG_BASE = bgAnsi;
+			const base = parseAnsiRgb(bgAnsi);
+			if (base) {
+				BG_BASE = Math.max(base.r, base.g, base.b) < 128
+					? mixBg(base, { r: 0, g: 0, b: 0 }, 0.55)
+					: bgAnsi;
 				RST = `\x1b[0m${BG_BASE}`;
 			}
 		} catch {}
@@ -1026,10 +998,10 @@ async function renderUnified(
 			continue;
 		}
 
-		// Context line — dimmed, single line number
+		// Context line — full syntax color, single line number
 		if (l.type === "ctx") {
 			const hl = oldHL[oI] ?? l.content;
-			emitRow(l.newNum, " ", BG_BASE, dc.fgCtx, `${BG_BASE}${DIM}${hl}`, BG_BASE);
+			emitRow(l.newNum, " ", BG_BASE, dc.fgCtx, `${BG_BASE}${hl}`, BG_BASE);
 			oI++;
 			nI++;
 			idx++;
@@ -1197,7 +1169,7 @@ async function renderSplit(
 		} else if (isDel || isAdd) {
 			body = injectBg(hl, [], cBg, cBg);
 		} else {
-			body = `${BG_BASE}${DIM}${hl}`;
+			body = `${BG_BASE}${hl}`;
 		}
 
 		const gutter = `${border}${gBg}${lnum(num, nw, numFg)}${gBg} ${sFg}${sign}${gBg} ${RST}`;

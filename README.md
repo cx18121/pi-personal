@@ -29,6 +29,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/model-policy.ts`](extensions/model-policy.ts) supplies configured child-model preferences and blocks automatically using disabled providers. Native Pi “save as default” remains available. Ordinary session model and thinking changes are not saved automatically.
 - [`modules/cxstack/extensions/reflect.ts`](modules/cxstack/extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and approval is required before any durable write.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
+- [`extensions/subagent-idle.ts`](extensions/subagent-idle.ts) removes blocking subagent waits from the main agent. When only children remain, the main agent ends its turn and stays available for your messages. The upstream package delivers child results and resumes the session automatically. There is no polling, wait cancellation, or installed-package patch. Activating the changed tool list may cause a one-time provider cache miss. Normal idle and continuation turns preserve the session and existing context.
 - [`extensions/superset.ts`](extensions/superset.ts) reports Pi session activity and input requests to Superset when Pi runs inside a Superset terminal.
 - [`extensions/time.ts`](extensions/time.ts) adds a read only tool that returns the local date, time, weekday, time zone, and elapsed session time.
 
@@ -83,6 +84,8 @@ Use `linux` on a Linux development host.
 See [Model configuration](config/README.md) for the single place to configure helper models, per-feature overrides, fallbacks, and temporary provider exclusions.
 
 Bootstrap does not upgrade installed extensions. For deliberate maintenance, run `mise run update -- macos` (or `linux`). It updates installed extensions and the model catalog, then runs tests, typechecks, and setup checks. It stops on the first failure and does not roll updates back. Pi itself remains managed by mise and dotfiles.
+
+The subagent idle extension has focused tests in `test/subagent-idle.test.ts`. Run `node test/subagent-idle-runtime.mjs` and `python3 test/subagent-idle-tui-probe.py` for offline checks against the installed Pi and real child processes. They use temporary settings and a deterministic fixture provider, without calling a model service or changing your sessions.
 
 See `config/settings.local.example.json` for adding work-only or machine-specific packages without committing local paths.
 

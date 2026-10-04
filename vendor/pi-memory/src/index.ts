@@ -1,9 +1,7 @@
-import * as path from "node:path";
-import * as fs from "node:fs";
 import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { assertMemoryMutationPermission, autoCaptureEnabled } from "./core.js";
-import { assertSafePath, migrateLedger, routingIndex } from "./ledger.js";
+import { autoCaptureEnabled } from "./core.js";
+import { routingIndex } from "./ledger.js";
 import { LEARNING_POLICY } from "./learning.js";
 import { MemorySession } from "./runtime.js";
 import { responseBudget, tokenEstimate } from "./admission.js";
@@ -50,34 +48,5 @@ export default function registerMemory(pi: ExtensionAPI) {
   });
   for (const tool of memoryOperations(session)) pi.registerTool({ ...tool,
     execute: (id, params, signal, _update, ctx) => tool.execute(id, params, signal, ctx),
-  });
-  pi.registerCommand("memory-migrate", {
-    description: "Preview lossless import of legacy Markdown. Add 'apply' to write, or 'all apply' for one host-wide cutover. Originals remain untouched.",
-    handler: async (args, ctx) => {
-      try {
-        assertMemoryMutationPermission(session.runtime(ctx).role);
-        const words = args.trim().split(/\s+/).filter(Boolean);
-        if (!["", "apply", "all", "all apply"].includes(words.join(" "))) throw new Error("Usage: /memory-migrate [all] [apply]");
-        const apply = words.includes("apply");
-        const locations = session.runtime(ctx).locations;
-        const targets: Array<{ scope: string; dir: string }> = session.scopes(ctx);
-        if (words.includes("all")) {
-          targets.splice(1);
-          const projectsDir = path.join(locations.baseDir, "projects");
-          assertSafePath(projectsDir);
-          if (fs.existsSync(projectsDir)) for (const name of fs.readdirSync(projectsDir).sort()) {
-            if (!/^[a-z0-9][a-z0-9-]*-[0-9a-f]{10}$/.test(name)) continue;
-            const dir = path.join(projectsDir, name);
-            assertSafePath(dir);
-            if (fs.statSync(dir).isDirectory()) targets.push({ scope: name, dir });
-          }
-        }
-        const reports = targets.map(({ scope, dir }) => {
-          const imported = migrateLedger(dir, apply);
-          return `${scope}: ${imported.alreadyMigrated ? "already migrated" : apply ? "imported" : "preview"}, ${imported.ledger.records.length} records from ${imported.ledger.imports.length} original files.`;
-        });
-        ctx.ui.notify(reports.join("\n"), "info");
-      } catch (error) { ctx.ui.notify(`Memory migration failed: ${String(error)}`, "error"); }
-    },
   });
 }

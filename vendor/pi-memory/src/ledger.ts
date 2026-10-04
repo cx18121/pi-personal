@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { assertSafePath, atomicWriteFile, readText, withFileLock } from "./core.js";
-import { isMetadataLine } from "./format.js";
 import { searchSources } from "./search.js";
 
 export { assertSafePath } from "./core.js";
@@ -63,10 +62,6 @@ export const recordHash = (record: MemoryRecord) => digest(JSON.stringify({
   updatedAt: record.updatedAt, expiresAt: record.expiresAt,
 }));
 export const ledgerPath = (dir: string) => path.join(dir, LEDGER_NAME);
-function importedId(reference: string) {
-  const hash = digest(reference);
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-}
 const date = (value: unknown): value is string => typeof value === "string" && Number.isFinite(Date.parse(value));
 const plain = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -192,7 +187,7 @@ export function readLedger(dir: string): Ledger {
   const text = readText(file);
   if (text) return decodeLedger(text);
   if (fs.existsSync(file)) throw new Error("Memory ledger is empty or corrupt; refusing to replace it.");
-  if (legacyFiles(dir).length) throw new Error("Legacy memory awaits explicit migration. Run /memory-migrate to preview, then /memory-migrate apply.");
+  if (legacyFiles(dir).length) throw new Error("Legacy Markdown exists without an active memory ledger. It is not loaded automatically; refusing to overwrite it.");
   return empty();
 }
 
@@ -315,58 +310,6 @@ export function restoreRecord(dir: string, recoveryId: string) {
     entry.restored = true;
     return { unchanged: false };
   }, true);
-}
-
-function legacySegments(text: string) {
-  const boundaries = [0];
-  let offset = 0;
-  let fence: { marker: string; length: number } | undefined;
-  for (const line of text.match(/[^\n]*\n|[^\n]+$/g) ?? []) {
-    const marker = line.replace(/\r?\n$/, "").match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (marker) {
-      if (!fence) fence = { marker: marker[1][0], length: marker[1].length };
-      else if (marker[1][0] === fence.marker && marker[1].length >= fence.length && !marker[2].trim()) fence = undefined;
-    } else if (!fence && offset > 0 && isMetadataLine(line.replace(/\r?\n$/, ""))) boundaries.push(offset);
-    offset += line.length;
-  }
-  return boundaries.map((start, index) => ({ start, content: text.slice(start, boundaries[index + 1] ?? text.length) }));
-}
-
-export function migrateLedger(dir: string, apply = false) {
-  const file = ledgerPath(dir);
-  assertSafePath(file);
-  const build = () => {
-    if (fs.existsSync(file)) return { ledger: readLedger(dir), alreadyMigrated: true };
-    const ledger = empty();
-    for (const source of legacyFiles(dir)) {
-      const raw = fs.readFileSync(source);
-      const text = raw.toString("utf8");
-      const fileUpdatedAt = fs.statSync(source).mtime.toISOString();
-      if (!Buffer.from(text).equals(raw)) throw new Error(`Legacy file is not valid UTF-8: ${source}`);
-      const relative = path.relative(dir, source);
-      const hash = digest(text);
-      ledger.imports.push({ path: relative, hash, bytes: raw.length });
-      const segments = legacySegments(text);
-      for (const { start, content } of segments) {
-        const topic = relative === "MEMORY.md" ? "legacy-index" : path.basename(source, ".md");
-        const firstLine = content.split(/\r?\n/, 1)[0];
-        const updatedAt = isMetadataLine(firstLine) ? firstLine.trim().split(" ")[2] : fileUpdatedAt;
-        const route = content.split(/\r?\n/).find((line) => line.trim() && !isMetadataLine(line))?.trim() ?? "Imported memory";
-        ledger.records.push({ id: importedId(`${relative}#${hash}@${start}`), revision: importedId(`revision:${relative}#${hash}@${start}`), topic, route, content,
-          kind: "legacy", always: false, updatedAt,
-          evidence: { actor: "legacy", reference: `${relative}#${hash}@${start}`, quote: content, observedAt: new Date().toISOString() } });
-      }
-      if (segments.map((segment) => segment.content).join("") !== text) throw new Error("Lossless import failed.");
-    }
-    encodeLedger(ledger);
-    return { ledger, alreadyMigrated: false };
-  };
-  if (!apply) return build();
-  return withFileLock(file, () => {
-    const result = build();
-    if (!result.alreadyMigrated) atomicWriteFile(file, encodeLedger(result.ledger));
-    return result;
-  });
 }
 
 export function recordCue(record: MemoryRecord) {

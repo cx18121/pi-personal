@@ -56,13 +56,11 @@ New before-images live separately under `recovery/ledger-v1/` using the same cod
 
 Writes synchronize the private temporary file before rename and synchronize the containing directory afterward. Readers see the previous or replacement file. Scope locks serialize concurrent writers, while ID/hash checks reject stale edits. Filesystem and hardware durability still depend on the host honoring synchronization.
 
-## Migration
+## Legacy files
 
-Run `/memory-migrate` to preview global and focused-project import, then `/memory-migrate apply` to apply it. `all` previews existing host scopes, and `all apply` imports them. Host-wide migration does not authorize automatic recall of other projects.
+Existing ledgers remain readable, including legacy records and import metadata. Old `MEMORY.md` files, topics, and archives are not imported or searched. Scratchpads remain separate from durable recall.
 
-Import preserves complete original UTF-8 bodies, source hashes, and offsets. It separates stamped entries only outside code fences. Imported records remain unclassified legacy material, with no invented user attribution or automatic standing-preference promotion.
-
-Original `MEMORY.md`, topics, scratchpads, and older recovery archives remain untouched. After import, legacy durable-memory files are inert and subsequent edits are not silently re-imported. Transactions are per scope. A failed scope can be retried without repeating completed imports. Reload old sessions before live cutover so obsolete writers do not keep appending to inert files.
+If a scope has old Markdown but no active ledger, reads and writes report that state rather than silently loading or overwriting it. There is no migration command or automatic import path.
 
 ## Tools and checks
 

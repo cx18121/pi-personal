@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { archiveRecord, decodeLedger, digest, encodeLedger, ledgerPath, lookupRecords, migrateLedger, readLedger, readRecoveries,
+import { archiveRecord, decodeLedger, encodeLedger, ledgerPath, lookupRecords, readLedger, readRecoveries,
   restoreRecord, recordHash, routingIndex, saveRecord, type MemoryRecord } from "../src/ledger.ts";
 import { atomicWriteFile } from "../src/core.ts";
 let root: string;
@@ -81,33 +81,33 @@ test("unsafe symlinked storage and legacy topics fail before reading/writing", (
   expect(() => saveRecord(link, input())).toThrow("symlink");
   expect(fs.readdirSync(external)).toEqual([]);
   fs.symlinkSync(external, path.join(root, "topics"));
-  expect(() => migrateLedger(root)).toThrow("symlink");
+  expect(() => readLedger(root)).toThrow("symlink");
 });
-test("migration is explicit, lossless and leaves all originals and recovery archives inert", () => {
-  const stamp = "<!-- pi-memory 2026-01-01T00:00:00.000Z [old] -->";
-  const original = `# handwritten\r\n\r\nFirst\r\n${stamp}\r\nbody😀\r\n\r\n\`\`\`html\r\n${stamp}\r\n\`\`\`\r\n${stamp}\r\nlast\r\n`;
+test("legacy files without an active ledger are not imported or overwritten", () => {
+  const original = "# handwritten\r\n\r\nOld decision😀\r\n";
+  const topic = "# Old runner\nUse Vitest.\n";
   atomicWriteFile(path.join(root, "MEMORY.md"), original);
-  atomicWriteFile(path.join(root, "topics", "test-runners.md"), "# Current runner\nUse Vitest.\n");
+  atomicWriteFile(path.join(root, "topics", "test-runners.md"), topic);
+  expect(() => readLedger(root)).toThrow("not loaded automatically");
+  expect(() => saveRecord(root, input("new decision"))).toThrow("refusing to overwrite");
+  expect(fs.existsSync(ledgerPath(root))).toBe(false);
+  expect(fs.readFileSync(path.join(root, "MEMORY.md"), "utf8")).toBe(original);
+  expect(fs.readFileSync(path.join(root, "topics", "test-runners.md"), "utf8")).toBe(topic);
+});
+test("existing ledgers ignore legacy files, scratchpads and archives", () => {
+  const saved = saveRecord(root, input("currentonlytoken"));
+  atomicWriteFile(path.join(root, "MEMORY.md"), "legacyonlytoken");
+  atomicWriteFile(path.join(root, "topics", "old.md"), "topicoldonlytoken");
   atomicWriteFile(path.join(root, "SCRATCHPAD.md"), "- [ ] scratchonlytoken");
   atomicWriteFile(path.join(root, "PAPERCUTS.md"), "archiveonlytoken");
   atomicWriteFile(path.join(root, "recovery", "old.json"), '{"old":"preserved"}');
-  expect(() => readLedger(root)).toThrow("explicit migration");
-  const preview = migrateLedger(root);
-  expect(fs.existsSync(ledgerPath(root))).toBe(false);
-  expect(preview.ledger.imports).toHaveLength(2);
-  const imported = migrateLedger(root, true);
-  const indexRecords = imported.ledger.records.filter((record) => record.topic === "legacy-index");
-  expect(indexRecords).toHaveLength(3);
-  expect(indexRecords.map((record) => record.content).join("")).toBe(original);
-  expect(imported.ledger.imports[0].hash).toBe(digest(original));
-  expect(fs.readFileSync(path.join(root, "MEMORY.md"), "utf8")).toBe(original);
+  for (const query of ["legacyonlytoken", "topicoldonlytoken", "scratchonlytoken", "archiveonlytoken"]) {
+    expect(lookupRecords([{ scope: "global", dir: root }], query)).toEqual([]);
+  }
+  expect(readLedger(root).records).toEqual([saved.record]);
+  expect(lookupRecords([{ scope: "global", dir: root }], "currentonlytoken")[0].id).toBe(saved.record.id);
+  expect(fs.readFileSync(path.join(root, "MEMORY.md"), "utf8")).toBe("legacyonlytoken");
   expect(fs.readFileSync(path.join(root, "recovery", "old.json"), "utf8")).toBe('{"old":"preserved"}');
-  expect(migrateLedger(root, true).alreadyMigrated).toBe(true);
-  atomicWriteFile(path.join(root, "MEMORY.md"), "latewriteronlytoken");
-  expect(lookupRecords([{ scope: "global", dir: root }], "latewriteronlytoken")).toEqual([]);
-  expect(lookupRecords([{ scope: "global", dir: root }], "scratchonlytoken")).toEqual([]);
-  expect(lookupRecords([{ scope: "global", dir: root }], "archiveonlytoken")).toEqual([]);
-  expect(imported.ledger.records.every((record) => record.kind === "legacy" && !record.always && record.evidence.actor === "legacy")).toBe(true);
 });
 test("symlinked lock queues cannot chmod or delete outside storage", () => {
   const dir = path.join(root, "scope"), outside = path.join(root, "outside");
@@ -121,12 +121,13 @@ test("symlinked lock queues cannot chmod or delete outside storage", () => {
   expect(fs.existsSync(ledgerPath(dir))).toBe(false);
 });
 
-test("abandoned temporary files are inert and large imports preserve complete originals", () => {
-  atomicWriteFile(path.join(root, ".MEMORY.ledger.md.old.tmp"), "interrupted write");
-  atomicWriteFile(path.join(root, "MEMORY.md"), "x".repeat(33000));
-  expect(migrateLedger(root, true).ledger.records[0].content).toBe("x".repeat(33000));
+test("abandoned temporary files are inert and large records remain complete", () => {
+  const temporary = path.join(root, ".MEMORY.ledger.md.old.tmp"), content = "x".repeat(33000);
+  atomicWriteFile(temporary, "interrupted write");
+  saveRecord(root, input(content));
+  expect(readLedger(root).records[0].content).toBe(content);
   expect(fs.existsSync(ledgerPath(root))).toBe(true);
-  expect(fs.statSync(path.join(root, "MEMORY.md")).size).toBe(33000);
+  expect(fs.readFileSync(temporary, "utf8")).toBe("interrupted write");
 });
 test("scope selection prevents unrelated-project matches and sees cross-process replacement", () => {
   const global = path.join(root, "global"), active = path.join(root, "active"), other = path.join(root, "other");

@@ -402,13 +402,14 @@ test("global discovery and optional current evidence survive corrupt project sto
   } finally { later.session.dispose(); }
 });
 
-test("personal registration has no settlement scheduler or learner-only tools", () => {
-  const events: string[] = [], names: string[] = [];
+test("personal registration has no migration command, settlement scheduler or learner-only tools", () => {
+  const events: string[] = [], names: string[] = [], commands: string[] = [];
   registerPersonalMemory({
     on: name => { events.push(name); },
     registerTool: tool => { names.push(tool.name); },
-    registerCommand: () => {},
+    registerCommand: name => { commands.push(name); },
   } as never);
+  expect(commands).toEqual([]);
   expect(events).toEqual(["session_start", "session_tree", "input", "tool_result", "context_with_system"]);
   expect(names).toEqual(["memory_focus", "memory_evidence", "memory_write", "memory_read",
     "memory_search", "memory_forget", "memory_restore", "memory_status", "scratchpad"]);

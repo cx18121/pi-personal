@@ -79,6 +79,8 @@ See [Model configuration](config/README.md) for the single place to configure he
 
 Bootstrap does not upgrade installed extensions. For deliberate maintenance, run `mise run update -- macos` (or `linux`). It updates installed extensions and the model catalog, then runs tests, typechecks, and setup checks. It stops on the first failure and does not roll updates back. Pi itself remains managed by mise and dotfiles.
 
+Bootstrap and update run `scripts/patch-extension-peers.mjs` to correct host dependency declarations in the installed `@juicesharp/rpiv-todo` and `pi-slopchop` manifests until upstream fixes them. After a direct `pi update`, run `node scripts/patch-extension-peers.mjs` before reloading Pi.
+
 The subagent idle extension has focused tests in `test/subagent-idle.test.ts`. Run `node test/subagent-idle-runtime.mjs` and `python3 test/subagent-idle-tui-probe.py` for offline checks against the installed Pi and real child processes. They use temporary settings and a deterministic fixture provider, without calling a model service or changing your sessions.
 
 See `config/settings.local.example.json` for adding work-only or machine-specific packages without committing local paths.

@@ -23,6 +23,7 @@ if [[ ! -f "$stamp" || "$(<"$stamp")" != "$lock_hash" ]]; then
 fi
 
 node "$root/scripts/settings.mjs" "$profile"
+node "$root/scripts/patch-extension-peers.mjs"
 mkdir -p "$HOME/.pi/agent"
 ln -sfn "$root/config/compact-tools.json" "$HOME/.pi/agent/compact-tools.json"
 mise -C "$root" run check -- "$profile"

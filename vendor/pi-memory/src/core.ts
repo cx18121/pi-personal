@@ -3,21 +3,16 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isMetadataLine, metadataLine } from "./format.js";
-import { searchSources, type SearchResult } from "./search.js";
 
-export const INDEX_MAX_BYTES = 25 * 1024;
 const LOCK_WAIT_MS = 1_500;
 const LOCK_RETRY_MS = 25;
 const LOCK_STALE_MS = 30_000;
-const TOPIC_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const RECOVERY_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHECKBOX_REGEX = /^- \[([ xX])\] (.+)$/;
 const PROJECT_ID_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,63})-[0-9a-f]{10}$/;
 const PROJECT_ID_CONFIG_KEY = "pi.memory-id";
 
 export type MemoryScope = "global" | "project";
 export type AgentRole = "root" | "subagent";
-export type MemoryTarget = "memory" | "topic";
 export type ChecklistAction = "add" | "done" | "undo" | "clear_done" | "list";
 
 export type MemoryEnvironment = NodeJS.ProcessEnv;
@@ -35,18 +30,6 @@ export interface MemoryLocations {
   project: ProjectIdentity | null;
   projectDir: string | null;
 }
-
-interface RecoveryRecord {
-  version: 1;
-  id: string;
-  createdAt: string;
-  target: MemoryTarget;
-  topic?: string;
-  removedContent: string[];
-  restoredAt?: string;
-}
-
-export type { SearchResult } from "./search.js";
 
 export interface ChecklistItem {
   done: boolean;
@@ -116,9 +99,6 @@ function gitCommonDir(cwd: string) {
 }
 
 class InvalidProjectIdentityError extends Error {}
-class ProjectIdentityInitializationTimeoutError extends Error {}
-class ProjectIdentityUnavailableError extends Error {}
-
 function readConfiguredProjectId(cwd: string) {
   try {
     const values = execFileSync(
@@ -138,53 +118,6 @@ function readConfiguredProjectId(cwd: string) {
   }
 }
 
-function withRepositoryIdentityLock<T>(commonGitDir: string, operation: () => T) {
-  const lockDir = path.join(commonGitDir, "pi-memory-id.lock");
-  const owner: LockOwner = { pid: process.pid, token: randomUUID() };
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  while (!tryAcquireLock(lockDir, owner)) {
-    const staleToken = staleLockToken(lockDir);
-    if (staleToken !== undefined) removeLockIfTokenMatches(lockDir, staleToken);
-    if (Date.now() >= deadline) {
-      throw new ProjectIdentityInitializationTimeoutError(
-        `Timed out initializing project memory identity: ${commonGitDir}`,
-      );
-    }
-    sleepSync(LOCK_RETRY_MS);
-  }
-  try {
-    return operation();
-  } finally {
-    removeLockIfTokenMatches(lockDir, owner.token);
-  }
-}
-
-function configuredProjectId(cwd: string, commonGitDir: string, name: string) {
-  const configured = readConfiguredProjectId(cwd);
-  if (configured) return configured;
-  try {
-    return withRepositoryIdentityLock(commonGitDir, () => {
-      const initialized = readConfiguredProjectId(cwd);
-      if (initialized) return initialized;
-      const id = `${name}-${randomUUID().replaceAll("-", "").slice(0, 10)}`;
-      execFileSync(
-        "git",
-        ["-C", cwd, "config", "--local", "--replace-all", PROJECT_ID_CONFIG_KEY, id],
-        { stdio: ["ignore", "ignore", "pipe"] },
-      );
-      return id;
-    });
-  } catch (error) {
-    if (
-      error instanceof InvalidProjectIdentityError
-      || error instanceof ProjectIdentityInitializationTimeoutError
-    ) {
-      throw error;
-    }
-    throw new ProjectIdentityUnavailableError("Git metadata is not writable.", { cause: error });
-  }
-}
-
 export function legacyProjectId(commonRoot: string) {
   const canonicalRoot = realpathIfPossible(commonRoot);
   const name = sanitizeProjectName(path.basename(canonicalRoot));
@@ -199,20 +132,13 @@ export function resolveProjectIdentity(cwd: string): ProjectIdentity | null {
     ? path.dirname(commonGitDir)
     : commonGitDir;
   const canonicalRoot = realpathIfPossible(commonRoot);
-  const currentName = sanitizeProjectName(path.basename(canonicalRoot));
-  let id: string;
-  try {
-    id = configuredProjectId(cwd, commonGitDir, currentName);
-  } catch (error) {
-    if (!(error instanceof ProjectIdentityUnavailableError)) throw error;
-    id = legacyProjectId(canonicalRoot);
-  }
+  const id = readConfiguredProjectId(cwd) ?? legacyProjectId(canonicalRoot);
   const hash = id.slice(-10);
   const name = id.slice(0, -11);
   return { commonRoot: canonicalRoot, name, hash, id };
 }
 
-function migrateLegacyProjectDir(baseDir: string, project: ProjectIdentity) {
+function existingProjectDir(baseDir: string, project: ProjectIdentity) {
   const projectDir = path.join(baseDir, "projects", project.id);
   const legacyDir = path.join(baseDir, "projects", legacyProjectId(project.commonRoot));
   if (legacyDir === projectDir || !fs.existsSync(legacyDir)) return projectDir;
@@ -221,13 +147,7 @@ function migrateLegacyProjectDir(baseDir: string, project: ProjectIdentity) {
       `Both stable and legacy project memory exist; refusing to hide or merge data: ${projectDir}, ${legacyDir}`,
     );
   }
-  ensurePrivateDir(path.dirname(projectDir));
-  try {
-    fs.renameSync(legacyDir, projectDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  return projectDir;
+  return legacyDir;
 }
 
 export function resolveLocations(
@@ -240,7 +160,7 @@ export function resolveLocations(
     baseDir,
     globalDir: path.join(baseDir, "global"),
     project,
-    projectDir: project ? migrateLegacyProjectDir(baseDir, project) : null,
+    projectDir: project ? existingProjectDir(baseDir, project) : null,
   };
 }
 
@@ -255,15 +175,26 @@ export function resolveScope(
   return { scope, dir: scope === "project" ? locations.projectDir! : locations.globalDir };
 }
 
-export function safeTopicSlug(topic: string) {
-  const normalized = topic.trim().toLowerCase();
-  if (!TOPIC_REGEX.test(normalized) || normalized !== topic.trim()) {
-    throw new Error("Topic must be a lowercase slug using only letters, numbers, and single hyphens.");
+export function assertSafePath(filePath: string) {
+  let current = path.resolve(filePath);
+  while (true) {
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) {
+        const systemAlias = process.platform === "darwin" && ["/var", "/tmp", "/etc"].includes(current)
+          && fs.realpathSync(current) === `/private${current}`;
+        if (!systemAlias) throw new Error(`Memory path contains a symlink: ${current}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
-  return normalized;
 }
 
 export function ensurePrivateDir(dir: string) {
+  assertSafePath(dir);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   fs.chmodSync(dir, 0o700);
 }
@@ -284,6 +215,7 @@ interface LockOwner {
 }
 
 function readLockOwner(lockDir: string): LockOwner | null {
+  assertSafePath(path.join(lockDir, "owner.json"));
   try {
     const owner = JSON.parse(fs.readFileSync(path.join(lockDir, "owner.json"), "utf8")) as Partial<LockOwner>;
     if (
@@ -345,6 +277,7 @@ function gateParticipants(queueDir: string, ownTicket: string) {
     if (name === ownTicket) continue;
     const pid = Number(name.split("-", 1)[0]);
     const participant = path.join(queueDir, name);
+    assertSafePath(participant);
     if (Number.isInteger(pid) && pid > 0) {
       if (isPidAlive(pid)) participants.push(name);
       else fs.rmSync(participant, { recursive: true, force: true });
@@ -364,6 +297,7 @@ function gateParticipants(queueDir: string, ownTicket: string) {
 }
 
 function gateNumber(queueDir: string, ticket: string) {
+  assertSafePath(path.join(queueDir, ticket, "number"));
   try {
     const number = Number(fs.readFileSync(path.join(queueDir, ticket, "number"), "utf8"));
     return Number.isSafeInteger(number) && number > 0 ? number : null;
@@ -407,6 +341,8 @@ export function withFileLock<T>(
   operation: () => T,
   options: { waitMs?: number; retryMs?: number } = {},
 ): T {
+  assertSafePath(filePath);
+  assertSafePath(`${filePath}.lock`);
   ensurePrivateDir(path.dirname(filePath));
   const lockDir = `${filePath}.lock`;
   const owner: LockOwner = { pid: process.pid, token: randomUUID() };
@@ -433,16 +369,20 @@ export function withFileLock<T>(
 }
 
 export function atomicWriteFile(filePath: string, content: string) {
+  assertSafePath(filePath);
   ensurePrivateDir(path.dirname(filePath));
   const tempPath = path.join(
     path.dirname(filePath),
     `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
   );
   try {
-    fs.writeFileSync(tempPath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    fs.chmodSync(tempPath, 0o600);
+    const fd = fs.openSync(tempPath, "wx", 0o600);
+    try { fs.writeFileSync(fd, content, "utf8"); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
     fs.renameSync(tempPath, filePath);
-    fs.chmodSync(filePath, 0o600);
+    // The private temporary inode retains its permissions across rename.
+    const directory = fs.openSync(path.dirname(filePath), "r");
+    try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
   } finally {
     fs.rmSync(tempPath, { force: true });
   }
@@ -450,7 +390,10 @@ export function atomicWriteFile(filePath: string, content: string) {
 
 export function readText(filePath: string) {
   try {
-    return fs.readFileSync(filePath, "utf8");
+    const raw = fs.readFileSync(filePath);
+    const text = raw.toString("utf8");
+    if (!Buffer.from(text).equals(raw)) throw new Error(`Memory file is not valid UTF-8: ${filePath}`);
+    return text;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw error;
@@ -473,54 +416,13 @@ export function mutateText(
   );
 }
 
-export function memoryFilePath(dir: string, target: MemoryTarget, topic?: string) {
-  if (target === "memory") return path.join(dir, "MEMORY.md");
-  if (!topic) throw new Error("A topic slug is required for topic memory.");
-  return path.join(dir, "topics", `${safeTopicSlug(topic)}.md`);
-}
-
 export function scratchpadFilePath(dir: string) {
   return path.join(dir, "SCRATCHPAD.md");
 }
 
-export function normalizeForDuplicate(value: string) {
-  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
-}
-
-function logicalBlockBody(block: LogicalMemoryBlock) {
-  return block.stamped ? block.content.split("\n").slice(1).join("\n").trim() : block.content;
-}
-
-function memoryEntryBodies(content: string) {
-  return logicalMemoryBlocks(content).map(logicalBlockBody);
-}
-
-export function writeMemory(options: {
-  dir: string;
-  target?: MemoryTarget;
-  topic?: string;
-  content: string;
-  sessionId?: string;
-}) {
-  const target = options.target ?? "memory";
-  const filePath = memoryFilePath(options.dir, target, options.topic);
-  const wanted = normalizeForDuplicate(options.content);
-  if (!wanted) throw new Error("Memory content must not be empty.");
-  if (options.content.replace(/\r\n?/g, "\n").split("\n").some(isMetadataLine)) {
-    throw new Error("Memory content contains a reserved pi-memory metadata line.");
-  }
-  mutateText(filePath, (existing) => {
-    if (memoryEntryBodies(existing).some((body) => normalizeForDuplicate(body) === wanted)) {
-      throw new Error("An exact normalized duplicate is already stored.");
-    }
-    const stamped = `${metadataLine(options.sessionId)}\n${options.content.trim()}\n`;
-    const next = `${existing.trimEnd()}${existing.trim() ? "\n\n" : ""}${stamped}`;
-    if (target === "memory" && Buffer.byteLength(next, "utf8") > INDEX_MAX_BYTES) {
-      throw new Error("MEMORY.md would exceed 25KB. Curate the index or move detail into a topic file.");
-    }
-    return next;
-  });
-  return filePath;
+export function normalizeForDuplicate(value: string, preserveCase = false) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return preserveCase ? normalized : normalized.toLocaleLowerCase();
 }
 
 export function parseChecklist(content: string): ChecklistItem[] {
@@ -613,242 +515,4 @@ export function assertScratchpadPermission(role: AgentRole, action: ChecklistAct
 
 export function assertMemoryMutationPermission(role: AgentRole) {
   if (role === "subagent") throw new Error("Subagents cannot mutate durable memory.");
-}
-
-interface LogicalMemoryBlock {
-  content: string;
-  stamped: boolean;
-}
-
-function logicalBlockKey(content: string) {
-  return content.replace(/\r\n?/g, "\n").trim();
-}
-
-function logicalMemoryBlocks(content: string): LogicalMemoryBlock[] {
-  const normalized = content.replace(/\r\n?/g, "\n");
-  const blocks: LogicalMemoryBlock[] = [];
-  let current: string[] = [];
-  let stamped = false;
-  const flush = () => {
-    const block = current.join("\n").trim();
-    if (!block) return;
-    if (stamped) {
-      blocks.push({ content: block, stamped: true });
-    } else {
-      blocks.push(
-        ...block
-          .split(/\n\s*\n/)
-          .map((paragraph) => paragraph.trim())
-          .filter(Boolean)
-          .map((paragraph) => ({ content: paragraph, stamped: false })),
-      );
-    }
-  };
-  for (const line of normalized.split("\n")) {
-    if (isMetadataLine(line)) {
-      flush();
-      current = [line];
-      stamped = true;
-    } else {
-      current.push(line);
-    }
-  }
-  flush();
-  return blocks;
-}
-
-function serializeLogicalMemoryBlocks(blocks: LogicalMemoryBlock[]) {
-  const unstamped = blocks.filter((block) => !block.stamped);
-  const stamped = blocks.filter((block) => block.stamped);
-  const ordered = [...unstamped, ...stamped];
-  return ordered.length ? `${ordered.map((block) => block.content).join("\n\n")}\n` : "";
-}
-
-function recoveredLogicalBlock(content: string): LogicalMemoryBlock {
-  const normalized = logicalBlockKey(content);
-  return { content: normalized, stamped: isMetadataLine(normalized.split("\n", 1)[0]) };
-}
-
-function recoveryPath(scopeDir: string, id: string) {
-  if (!RECOVERY_ID_REGEX.test(id)) throw new Error("Invalid recovery ID.");
-  return path.join(scopeDir, "recovery", `${id}.json`);
-}
-
-export function forgetMemory(options: {
-  dir: string;
-  target?: MemoryTarget;
-  topic?: string;
-  match: string;
-}) {
-  const needle = options.match.trim().toLocaleLowerCase();
-  if (!needle) throw new Error("Match must not be empty.");
-  const target = options.target ?? "memory";
-  const sourcePath = memoryFilePath(options.dir, target, options.topic);
-  return withFileLock(sourcePath, () => {
-    const existing = readText(sourcePath);
-    const blocks = logicalMemoryBlocks(existing);
-    const matches = (block: LogicalMemoryBlock) => logicalBlockBody(block).toLocaleLowerCase().includes(needle);
-    const removed = blocks.filter(matches);
-    if (!removed.length) throw new Error("No matching memory entries found.");
-    const kept = blocks.filter((block) => !matches(block));
-    const record: RecoveryRecord = {
-      version: 1,
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      target,
-      ...(options.topic ? { topic: safeTopicSlug(options.topic) } : {}),
-      removedContent: removed.map((block) => block.content),
-    };
-    const recordPath = recoveryPath(options.dir, record.id);
-    atomicWriteFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
-    atomicWriteFile(sourcePath, serializeLogicalMemoryBlocks(kept));
-    return { recoveryId: record.id, removed: removed.length, path: sourcePath };
-  });
-}
-
-function parseRecovery(scopeDir: string, id: string) {
-  const filePath = recoveryPath(scopeDir, id);
-  const record = JSON.parse(readText(filePath)) as RecoveryRecord;
-  if (
-    record.version !== 1 ||
-    record.id !== id ||
-    !Array.isArray(record.removedContent) ||
-    !record.removedContent.every((entry) => typeof entry === "string")
-  ) {
-    throw new Error("Invalid recovery record.");
-  }
-  return { record, filePath };
-}
-
-export function restoreMemory(scopeDir: string, recoveryId: string) {
-  const { record, filePath: recordPath } = parseRecovery(scopeDir, recoveryId);
-  if (record.restoredAt) return { restored: 0, alreadyRestored: true };
-  const targetPath = memoryFilePath(scopeDir, record.target, record.topic);
-  const restored = withFileLock(targetPath, () => {
-    const existing = readText(targetPath);
-    const existingBlocks = logicalMemoryBlocks(existing);
-    const existingBodies = new Set(existingBlocks.map((block) => normalizeForDuplicate(logicalBlockBody(block))));
-    const missing = record.removedContent
-      .map(recoveredLogicalBlock)
-      .filter((entry) => !existingBodies.has(normalizeForDuplicate(logicalBlockBody(entry))));
-    const next = missing.length
-      ? serializeLogicalMemoryBlocks([...existingBlocks, ...missing])
-      : existing;
-    if (record.target === "memory" && Buffer.byteLength(next, "utf8") > INDEX_MAX_BYTES) {
-      throw new Error("Restoring would make MEMORY.md exceed 25KB. Curate the index before restoring.");
-    }
-    if (missing.length) atomicWriteFile(targetPath, next);
-    record.restoredAt = new Date().toISOString();
-    atomicWriteFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
-    return missing.length;
-  });
-  return { restored, alreadyRestored: false, path: targetPath };
-}
-
-export function findRecoveryScope(locations: MemoryLocations, recoveryId: string) {
-  const scopes: Array<{ scope: MemoryScope; dir: string }> = [
-    { scope: "global", dir: locations.globalDir },
-    ...(locations.projectDir ? [{ scope: "project" as const, dir: locations.projectDir }] : []),
-  ];
-  for (const candidate of scopes) {
-    try {
-      if (fs.statSync(recoveryPath(candidate.dir, recoveryId)).isFile()) return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-  }
-  throw new Error("Recovery record was not found in global or active project memory.");
-}
-
-function readDirectoryIfPresent(dir: string) {
-  try {
-    return fs.readdirSync(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-function scopeMarkdownFiles(scopeDir: string) {
-  const files = ["MEMORY.md", "SCRATCHPAD.md"].map((name) => path.join(scopeDir, name));
-  files.push(...listTopics(scopeDir).map((topic) => path.join(scopeDir, "topics", `${topic}.md`)));
-  return files;
-}
-
-export function searchMemory(locations: MemoryLocations, query: string, limit = 5): SearchResult[] {
-  const dirs = [locations.globalDir, ...(locations.projectDir ? [locations.projectDir] : [])];
-  const sources = dirs.flatMap((dir) =>
-    scopeMarkdownFiles(dir).map((filePath) => ({ path: filePath, content: readText(filePath) })),
-  );
-  return searchSources(sources, query, limit);
-}
-
-function indexContext(label: string, filePath: string) {
-  const content = readText(filePath);
-  if (!content.trim()) return "";
-  const size = Buffer.byteLength(content, "utf8");
-  if (size > INDEX_MAX_BYTES) {
-    return `## ${label}\n\n[Omitted: ${filePath} is ${size} bytes, above the 25KB index limit. Curate it before loading.]`;
-  }
-  return `## ${label}\n\n${content.trim()}`;
-}
-
-export function scratchpadNowSection(content: string) {
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const start = lines.findIndex((line) => /^## Now[ \t]*$/.test(line));
-  if (start < 0) return "";
-  const nextHeading = lines.findIndex((line, index) => index > start && /^##[ \t]+/.test(line));
-  const end = nextHeading >= 0 ? nextHeading : lines.length;
-  const now = lines.slice(start + 1, end).join("\n").trim();
-  return /^none\.?$/i.test(now) ? "" : now;
-}
-
-export function buildStartupContext(options: {
-  locations: MemoryLocations;
-  role: AgentRole;
-  autoCapture?: boolean;
-}) {
-  const sections = [indexContext("Global MEMORY.md", path.join(options.locations.globalDir, "MEMORY.md"))];
-  if (options.locations.projectDir) {
-    sections.push(indexContext("Project MEMORY.md", path.join(options.locations.projectDir, "MEMORY.md")));
-    const scratchpad = readText(path.join(options.locations.projectDir, "SCRATCHPAD.md"));
-    const now = scratchpadNowSection(scratchpad);
-    const nowItems = new Set(parseChecklist(now).map((item) => item.text));
-    const open = parseChecklist(scratchpad).filter((item) => !item.done && !nowItems.has(item.text));
-    const active = [now, open.map((item) => `- [ ] ${item.text}`).join("\n")].filter(Boolean).join("\n\n");
-    if (active) sections.push(`## Active project scratchpad\n\n${active}`);
-  }
-  const capture =
-    options.autoCapture !== false && options.role === "root"
-      ? [
-          "Use visible memory_write tool calls during work to save only stable preferences, corrections, recurring failures with confirmed fixes, and useful facts not quickly derivable from current code or documentation.",
-          "Do not run a separate transcript review or make an invisible capture call.",
-        ]
-      : [];
-  const body = sections.filter(Boolean);
-  return [
-    "# Local memory",
-    "Current code, documentation, explicit instructions, and the latest user correction override memory. Replace or remove stale memory rather than preserving conflicts.",
-    ...capture,
-    "During an explicit approval-gated review, propose durable memory writes and wait for the user's selection instead of writing them immediately.",
-    ...body,
-  ].join("\n\n");
-}
-
-export function listTopics(dir: string) {
-  return readDirectoryIfPresent(path.join(dir, "topics"))
-    .filter((name) => name.endsWith(".md"))
-    .map((name) => name.slice(0, -3))
-    .sort();
-}
-
-export function scopeInventory(dir: string) {
-  const files = scopeMarkdownFiles(dir).filter((filePath) => fs.existsSync(filePath));
-  return {
-    dir,
-    files: files.length,
-    bytes: files.reduce((total, filePath) => total + fs.statSync(filePath).size, 0),
-    topics: listTopics(dir).length,
-    scratchpadOpen: parseChecklist(readText(path.join(dir, "SCRATCHPAD.md"))).filter((item) => !item.done).length,
-  };
 }

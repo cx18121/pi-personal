@@ -186,8 +186,14 @@ describe("CX extension wiring", () => {
 		await harness.commands.get("cx").handler("next task", ctx);
 		expect(harness.entries).toHaveLength(1);
 		expect(harness.userMessages).toHaveLength(2);
-		const ordinary = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
-		expect(ordinary).toEqual({ systemPrompt: `base\n\n${CX_MARKER}` });
+		const options = { sections: { neighboring: "preserve this section" } };
+		const event = { systemPrompt: "base", systemPromptOptions: options };
+		expect(harness.handlers.get("before_agent_start")(event, ctx)).toBeUndefined();
+		expect(options.sections.cx_marker).toBe(CX_MARKER);
+		expect(options.sections.neighboring).toBe("preserve this section");
+		expect(options).not.toHaveProperty("forceSystemPrompt");
+		harness.handlers.get("before_agent_start")(event, ctx);
+		expect(options.sections.cx_marker).toBe(CX_MARKER);
 	});
 
 	test("deactivates without a model turn and makes the inactive directive newest", async () => {

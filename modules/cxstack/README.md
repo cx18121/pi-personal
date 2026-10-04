@@ -70,16 +70,6 @@ Reflect proposes exact changes and waits for your selection. It does not write m
 
 Reflect works whether CX is active or not.
 
-## Correction loop
-
-In an active CX session, the model appends a structured marker for a concrete mismatch in its prior work or a missed standing preference. Ordinary questions, new requirements, and selecting an offered option are not corrections by themselves. The extension hides the marker and stores the interpretation, exact session references, and a bounded source exchange in the private local event log. Questionnaire answers can supply feedback. Capturing the same response and feedback twice does not create another candidate. Capture adds no tool call or model turn. `correction_log` exists only for approved Reflect backfills.
-
-Grouping runs asynchronously through the shared `cxModels` helper policy (the session model by default) using those records, earlier review decisions, and the effective guidance of the open project. That guidance is not a claim that another project's files or an unloaded skill were inspected. Ready requires complete source evidence and an explanation of the actual mismatch, uncovered gap, and benefit of changing it. Project-specific gaps also require guidance from that same project. Shared skills, tools, and cross-project preferences are assessed as global gaps. Missing or truncated evidence stays out of Ready. False captures and covered lessons remain evidence without becoming proposals. Duplicates link to an existing item without rewriting its evidence or decision. New evidence that an applied fix failed can still earn a fresh review.
-
-Ready items appear at a later natural handoff and remain reviewable through `/corrections`. Discussion inspects the current owner before proposing a change. A saved proposal must name a proof plan and earn any new eval it adds. It assigns an optional intervention to one owner. Accepting it authorizes that exact local action and focused verification. Failed proof rejects the intervention. Commit, push, publication, and deployment remain separate. Existing frozen items and human decisions survive grouping upgrades.
-
-Reflect can offer a missed correction for one-click backfill when the active model failed to record it.
-
 ## Improve CXStack
 
 Reflect can classify a confirmed recurring failure as a CXStack change. It checks whether architecture can remove the failure first, then whether an automated check can catch it. It changes guidance only when code cannot enforce the behavior.
@@ -109,10 +99,8 @@ Send another prompt without `/cx`, then try `/cx off` and `/cx` to restore it. A
 
 - [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command, Pi session events, and version markers.
 - [`extensions/audit.ts`](extensions/audit.ts) owns the `/cx-audit` command.
-- [`extensions/corrections.ts`](extensions/corrections.ts) owns correction capture, grouping, undo, proposals, and `/corrections`.
 - [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
 - [`lib/audit.ts`](lib/audit.ts) selects recent sessions and extracts only CX version and reference markers.
-- [`lib/corrections.ts`](lib/corrections.ts) owns correction event storage, provenance, state, and grouping validation.
 - [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
 - [`resources/references`](resources/references/) contains the eight route playbooks, shared change spine, child review contracts, and conditional guidance.
 - [`resources/audit.md`](resources/audit.md) contains the private cross-session audit process.

@@ -332,15 +332,15 @@ describe("CX package resources", () => {
 		expect(reflect).not.toContain("context: \"fresh\"");
 		expect(reflect).not.toContain("mission: false");
 		expect(reflect).not.toContain("artifacts: false");
-		expect(reflect).toContain("Missed correction candidate for the correction log");
-		expect(reflect).toContain("call `correction_log`");
+		expect(reflect).not.toContain("correction log");
+		expect(reflect).not.toContain("correction_log");
 	});
 
 	test("registers extension commands without public skill bypasses", () => {
 		const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 		expect(manifest.pi.skills).toBeUndefined();
 		expect(manifest.pi.prompts).toBeUndefined();
-		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/corrections.ts");
+		expect(manifest.pi.extensions).not.toContain("./modules/cxstack/extensions/corrections.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/audit.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/cx.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/reflect.ts");

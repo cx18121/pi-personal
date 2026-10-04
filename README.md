@@ -35,7 +35,7 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 
 ## Bundled integrations
 
-- [`vendor/pi-memory`](vendor/pi-memory/README.md) stores global and project memory in local Markdown. It provides search, topics, scratchpads, safe deletion, and recovery without a database or hosted service.
+- [`vendor/pi-memory`](vendor/pi-memory/README.md) stores global and project memory in local Markdown. It provides a complete topic inventory, native-session evidence, task-project focus, on-demand reads, scratchpads, and conflict-safe updates without a database or hosted service.
 - [`vendor/pi-diff`](vendor/pi-diff/src/index.ts) renders `edit` and `write` results as syntax-highlighted diffs with red and green row backgrounds. It is a fork of [`@heyhuynhgiabuu/pi-diff`](https://github.com/buddingnewinsights/pi-diff) 0.9.1 with two changes. [`src/shiki.ts`](vendor/pi-diff/src/shiki.ts) loads Shiki themes and grammars statically with the JavaScript regex engine, because Pi's compiled runtime cannot resolve Shiki's lazy imports and the upstream package silently renders uncolored code. Its `apply_patch` tool is disabled by default.
 - [`vendor/pi-compact-tools`](vendor/pi-compact-tools/extensions/compact-tools.ts) renders `read`, `grep`, `find`, `ls`, `bash`, and other extensions' tools as compact expandable rows. It is a trimmed fork of [`pi-compact-tools`](https://github.com/nedleeds/pi-compact-tools) 0.11.2. It keeps only the compact rows, removing the thinking restyle, the tool progress message, silent mode, the Claude Code style, release notices, its edit and write renderers, PowerShell support, and the pulsing status dot. It also restyles built-in tool names that another extension owns, so `bash` stays owned by `tool-safety.ts` and `edit` and `write` stay with pi-diff. [`config/compact-tools.json`](config/compact-tools.json) is linked to `~/.pi/agent/compact-tools.json` by bootstrap.
 - [`vendor/pi-paster`](vendor/pi-paster/README.md) turns pasted or dropped images into Pi attachments. It also adds image previews and `/image-compress` for replacing old image blocks with text summaries in a copied session.
@@ -44,12 +44,11 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 
 - [`modules/cxstack/lib/cx.ts`](modules/cxstack/lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
 - [`modules/cxstack/lib/audit.ts`](modules/cxstack/lib/audit.ts) finds recent CX sessions and extracts only version and reference markers for the audit manifest.
-- [`modules/cxstack/lib/corrections.ts`](modules/cxstack/lib/corrections.ts) stores correction evidence, exact session provenance, grouping snapshots, and proposal decisions.
 - [`lib/reminders.ts`](lib/reminders.ts) validates reminder data and groups reminders by date for the `/reminders` view.
 - [`lib/time-context.ts`](lib/time-context.ts) formats local time and calculates elapsed session time for the time tool.
 - [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.
 - [`scripts/apple-reminders.js`](scripts/apple-reminders.js) uses macOS automation to read and change Apple Reminders.
-- [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts), [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs), and the correction tests cover CX command, routing, session, correction, packaging, and handler behavior.
+- [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts), [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs), cover CX command, routing, session, packaging, and handler behavior.
 - [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check through `spawn_agent` with synthetic data. It is manual because it makes real model calls.
 - [`test/time-reminders.test.ts`](test/time-reminders.test.ts) tests the shared time and reminder behavior.
 

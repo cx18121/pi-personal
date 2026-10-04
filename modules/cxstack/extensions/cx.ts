@@ -130,7 +130,7 @@ export default function registerCx(pi: ExtensionAPI) {
 		const next = takeBeforeAgentDirective(state);
 		state = next.state;
 		if (next.directive) return { message: directiveMessage(next.directive) };
-		if (next.marker) return { systemPrompt: `${event.systemPrompt}\n\n${CX_MARKER}` };
+		if (next.marker) event.systemPromptOptions.sections.cx_marker = CX_MARKER;
 		return undefined;
 	});
 

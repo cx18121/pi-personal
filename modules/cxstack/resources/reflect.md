@@ -41,7 +41,6 @@ A test must protect behavior, not preserve historical wording. State why higher-
 
 Classify every candidate as one of:
 
-- Missed correction candidate for the correction log.
 - Global preference memory.
 - Project memory.
 - Structural code, check, or helper change.
@@ -59,4 +58,4 @@ When a confirmed finding concerns CXStack itself, read `README.md` and current s
 
 Show the evidence, prevention choice, exact files, and proposed patch. Wait for selection before editing. After approval, preserve unrelated work, apply only the selected patch, run focused checks, and report that `/reload` is needed. Delivery remains a separate approved step.
 
-Show every proposed classification, destination, and exact change. For a missed correction in an active CX session, include the exact request, corrected assistant, and correction entry IDs. Wait for selection. When a missed correction is selected, call `correction_log` with those source IDs and the approved interpretation. Apply only selected items. Do not create tracker items, edit skills or project files, write memory, or backfill corrections before approval.
+Show every proposed classification, destination, and exact change. Wait for selection and apply only selected items. Do not create tracker items, edit skills or project files, or write memory before approval.

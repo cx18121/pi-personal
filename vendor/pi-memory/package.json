@@ -19,7 +19,7 @@
     ]
   },
   "scripts": {
-    "test": "bun test ./test/memory.test.ts",
+    "test": "bun test ./test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -30,8 +30,8 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-ai": "0.99.1",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.3"
   }

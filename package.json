@@ -6,7 +6,7 @@
   "scripts": {
     "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
     "test:routing": "node ./modules/cxstack/test/routing-probe.mjs",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/answer.ts extensions/core-mcp.ts extensions/subagent-idle.ts && npm --prefix vendor/pi-memory run typecheck"
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/answer.ts extensions/core-mcp.ts extensions/memory.ts extensions/subagent-idle.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -46,6 +46,7 @@
   },
   "pi": {
     "extensions": [
+      "./extensions/memory.ts",
       "./extensions/answer.ts",
       "./extensions/apple-notes.ts",
       "./extensions/clear-command.ts",
@@ -53,7 +54,6 @@
       "./extensions/core-mcp.ts",
       "./modules/cxstack/extensions/cx.ts",
       "./modules/cxstack/extensions/audit.ts",
-      "./modules/cxstack/extensions/corrections.ts",
       "./extensions/effort.ts",
       "./extensions/fast-mode.ts",
       "./extensions/inline-skills.ts",
@@ -68,7 +68,6 @@
       "./extensions/time.ts",
       "./extensions/tool-safety.ts",
       "./extensions/reasoning-label.ts",
-      "./vendor/pi-memory/src/index.ts",
       "./vendor/pi-paster/src/index.ts",
       "./vendor/pi-diff/src/index.ts",
       "./vendor/pi-compact-tools/extensions/compact-tools.ts",

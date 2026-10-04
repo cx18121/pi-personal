@@ -27,7 +27,7 @@ function harness() {
 describe("shared helper policy", () => {
   test("defaults to the session without catalog selection", async () => {
     const h = harness();
-    await completeHelper("corrections", h.ctx as never, content, new AbortController().signal, { policy: {}, request: h.request as never });
+    await completeHelper("answer", h.ctx as never, content, new AbortController().signal, { policy: {}, request: h.request as never });
     expect(h.calls).toEqual(["openai-codex/primary"]);
   });
   test("feature override replaces helper defaults", async () => {
@@ -51,7 +51,7 @@ describe("shared helper policy", () => {
       h.calls.push(model.provider);
       return model === primary ? { stopReason: "error", errorMessage: "quota exhausted" } : ok;
     };
-    await completeHelper("corrections", h.ctx as never, content, new AbortController().signal, {
+    await completeHelper("answer", h.ctx as never, content, new AbortController().signal, {
       policy: { helpers: ["session", "anthropic/alternate"] }, request: request as never,
     });
     expect(h.calls).toEqual(["openai-codex", "anthropic"]);
@@ -117,6 +117,13 @@ describe("shared helper policy", () => {
       }) as never,
     });
   });
+  test("legacy memory helper settings remain inert for the answer consumer", async () => {
+    const h = harness();
+    const policy = parseModelPolicy({ helpers: ["session"], overrides: { memory: ["anthropic/alternate"] } });
+    await completeHelper("answer", h.ctx as never, content, new AbortController().signal, { policy, request: h.request as never });
+    expect(h.calls).toEqual(["openai-codex/primary"]);
+    expect(h.ctx.model).toBe(primary);
+  });
   test("malformed policy and misspelled overrides fail visibly", () => {
     expect(() => parseModelPolicy({ helpers: [] })).toThrow("nonempty");
     expect(() => parseModelPolicy({ helpers: ["bare-model"] })).toThrow("provider/model");
@@ -144,7 +151,14 @@ describe("automatic child guard", () => {
     expect(call("send_message", { target: "/child" })).toBeUndefined();
     expect(entries).toHaveLength(1);
     expect(h.ctx.model).toBe(primary);
-    const prompt = handlers.get("before_agent_start")({ systemPrompt: "base" }, h.ctx).systemPrompt;
+    const options = { sections: { neighboring: "preserve this section" } };
+    const event = { systemPrompt: "base", systemPromptOptions: options };
+    expect(handlers.get("before_agent_start")(event, h.ctx)).toBeUndefined();
+    const prompt = options.sections.model_policy;
     expect(prompt).toContain("Allowed scoped child choices: openai-codex/primary.");
+    expect(options.sections.neighboring).toBe("preserve this section");
+    expect(options).not.toHaveProperty("forceSystemPrompt");
+    handlers.get("before_agent_start")(event, h.ctx);
+    expect(options.sections.model_policy).toBe(prompt);
   });
 });

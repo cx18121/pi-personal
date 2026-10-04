@@ -48,7 +48,6 @@
     "extensions": [
       "./extensions/memory.ts",
       "./extensions/answer.ts",
-      "./extensions/apple-notes.ts",
       "./extensions/clear-command.ts",
       "./extensions/color-footer.ts",
       "./extensions/core-mcp.ts",
@@ -59,7 +58,6 @@
       "./extensions/inline-skills.ts",
       "./extensions/intercom-toggle.ts",
       "./extensions/notify.ts",
-      "./extensions/reminders.ts",
       "./extensions/model-policy.ts",
       "./modules/cxstack/extensions/reflect.ts",
       "./extensions/side-conversations.ts",

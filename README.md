@@ -14,7 +14,6 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 ## Extensions
 
 - [`extensions/answer.ts`](extensions/answer.ts) adds `/answer` and `Ctrl+.`. It finds questions in the last assistant response, shows them in a form, and sends the completed answers back to Pi.
-- [`extensions/apple-notes.ts`](extensions/apple-notes.ts) adds `/note` and tools for searching, listing, reading, saving, and creating Apple Notes.
 - [`extensions/clear-command.ts`](extensions/clear-command.ts) adds `/clear` for starting a session with no conversation context. It also hides `/new` from command completion.
 - [`extensions/color-footer.ts`](extensions/color-footer.ts) replaces the standard footer with two lines that show the project, Git branch, pending changes, model, thinking level, active modes, context use, and diff size.
 - [`extensions/core-mcp.ts`](extensions/core-mcp.ts) registers Linear, Exa, Better Stack, Ecotone, Context7, Slack, Pencil, and Pango ClickHouse with Pi's built-in MCP support (Pi 0.99 or newer). Servers connect at session startup and tools load on demand through `tool_search`. Mutating Better Stack and Slack tools stay hidden and unreachable. Exa exposes only its four configured tools. Use `/mcp` to check connections and sign in. These extension registrations are not loaded by shell `pi mcp` commands. ClickHouse uses the pinned official stdio server and the read-only `pango_mcp_readonly` database user. [`scripts/clickhouse-mcp.py`](scripts/clickhouse-mcp.py) passes only the configured ClickHouse variables and basic runtime paths to the absolute `uv` executable. Do not use the mise shim, which can overwrite connection settings with the current project's environment. Its password comes from the macOS Keychain item `pi-clickhouse-readonly` with account `pango_mcp_readonly`. Native OAuth credentials live in `~/.pi/agent/mcp-auth.json`; sign in again when migrating from the adapter rather than copying its tokens.
@@ -25,7 +24,6 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 - [`extensions/inline-skills.ts`](extensions/inline-skills.ts) loads skills from short `/name` tokens anywhere in a prompt. It replaces Pi's native `/skill:name` skill completion with the same short form at the start of a prompt.
 - [`extensions/notify.ts`](extensions/notify.ts) sends a terminal notification with the end of the assistant response when Pi finishes. It stays silent inside Herdr because Herdr handles those notifications.
 - [`extensions/prompt-restore.ts`](extensions/prompt-restore.ts) restores a submitted text prompt to the editor when Escape cancels it before the assistant produces output.
-- [`extensions/reminders.ts`](extensions/reminders.ts) adds `/reminders` and a tool for listing, creating, updating, completing, and deleting Apple Reminders.
 - [`extensions/model-policy.ts`](extensions/model-policy.ts) supplies configured child-model preferences and blocks automatically using disabled providers. Native Pi “save as default” remains available. Ordinary session model and thinking changes are not saved automatically.
 - [`modules/cxstack/extensions/reflect.ts`](modules/cxstack/extensions/reflect.ts) adds explicit `/reflect` session learning. The parent creates a bounded private digest, one fresh reviewer challenges it, and approval is required before any durable write.
 - [`extensions/side-conversations.ts`](extensions/side-conversations.ts) adds `/btw` for a quick conversation without tools and `/side` for a separate Pi session with the current context. It opens the session in Herdr, Superset, or the current terminal.
@@ -44,13 +42,10 @@ See [`modules/cxstack/README.md`](modules/cxstack/README.md) for the `/cx`, `/cx
 
 - [`modules/cxstack/lib/cx.ts`](modules/cxstack/lib/cx.ts) contains the mechanical CX command, session-state, directive, and resource-path rules.
 - [`modules/cxstack/lib/audit.ts`](modules/cxstack/lib/audit.ts) finds recent CX sessions and extracts only version and reference markers for the audit manifest.
-- [`lib/reminders.ts`](lib/reminders.ts) validates reminder data and groups reminders by date for the `/reminders` view.
 - [`lib/time-context.ts`](lib/time-context.ts) formats local time and calculates elapsed session time for the time tool.
-- [`scripts/apple-notes.js`](scripts/apple-notes.js) uses macOS automation to read and change Apple Notes.
-- [`scripts/apple-reminders.js`](scripts/apple-reminders.js) uses macOS automation to read and change Apple Reminders.
 - [`modules/cxstack/test/cxstack.test.ts`](modules/cxstack/test/cxstack.test.ts), [`modules/cxstack/test/extensions.test.mjs`](modules/cxstack/test/extensions.test.mjs), cover CX command, routing, session, packaging, and handler behavior.
 - [`modules/cxstack/test/reflect-privacy-probe.py`](modules/cxstack/test/reflect-privacy-probe.py) runs the explicit live Reflect privacy check through `spawn_agent` with synthetic data. It is manual because it makes real model calls.
-- [`test/time-reminders.test.ts`](test/time-reminders.test.ts) tests the shared time and reminder behavior.
+- [`test/time-context.test.ts`](test/time-context.test.ts) tests local time and elapsed session time.
 
 ## Origins
 

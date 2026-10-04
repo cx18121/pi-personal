@@ -7,9 +7,7 @@
     {
       "source": "../../Projects/personal/pi-personal",
       "extensions": [
-        "-extensions/apple-notes.ts",
-        "-extensions/core-mcp.ts",
-        "-extensions/reminders.ts"
+        "-extensions/core-mcp.ts"
       ]
     },
     "npm:@juicesharp/rpiv-todo",

@@ -37,7 +37,7 @@ describe("CX routing policy", () => {
 	});
 
 	test("earns maintainability and correctness review from risk", () => {
-		expect(review).toContain("Run Simplify when earned");
+		expect(review).toContain("Run Maintainability Review when earned");
 		expect(review).toContain("Run one Correctness Review when earned");
 		expect(review).toContain("only when a wrong result is costly, hidden, hard to undo");
 	});
@@ -63,7 +63,9 @@ describe("CX routing policy", () => {
 		expect(review).toContain("The parent checks maintainability");
 		expect(review).toContain("observed avoidable complexity or duplication");
 		expect(review).toContain("named maintainability risk");
-		expect(review).toContain("unless distinct questions require both skills");
+		expect(review).toContain("Choose depth within Maintainability Review");
+		expect(review).toContain("one adaptive maintainability owner");
+		expect(review).not.toContain("thermo-nuclear-code-quality-review");
 		expect(review).not.toContain("PR-sized");
 		expect(review).not.toContain("A skip stays visible");
 	});

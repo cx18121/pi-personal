@@ -2,13 +2,13 @@
 
 Run only when invoked by Review step 5 after accepted maintainability changes, before delivery or completion.
 
-Launch one fresh background child with `spawn_agent` using the complementary choice from Model roles. The child is read only because the delegated task says so.
+Launch one fresh background child with `spawn_agent` using the complementary choice and brief guidance from Model roles. The child is read only because the delegated task says so.
 
 Give it:
 
 1. The originating issue and confirmed implementation contract.
 2. Settled decisions, scope, and exclusions.
-3. The complete current diff, including untracked additions.
+3. Where to inspect the complete current diff, including untracked additions.
 4. Relevant project and language rules.
 5. The source paths and surrounding callers or consumers.
 6. Verification already observed.

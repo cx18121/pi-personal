@@ -6,7 +6,7 @@ Under **Establish route evidence**:
 
 1. **Pin current behavior.** Capture the observable outputs, public interfaces, callers, error behavior, and relevant performance before moving structure.
 2. **Name the complexity to remove.** State which duplicated fact, scattered change, leaky interface, or reader burden disappears.
-3. **Choose the target seam.** Trace callers and ownership. Apply the structural triggers and review requirements in Readiness Review.
+3. **Choose the target seam.** Trace callers and ownership. Apply the review condition and inspection guidance in Readiness Review.
 4. **Define deletion.** Name the old path, adapter, helper, or representation that the refactor removes. A second path is not a completed refactor.
 
 Under **Work in verifiable units**:

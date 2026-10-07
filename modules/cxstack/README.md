@@ -40,7 +40,9 @@ In this setup, `~/.config/rpiv-todo/config.json` owns Todo creation guidance thr
 
 CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries actual unfinished work when a task needs one.
 
-Readiness Review owns pre-implementation review, including the structural triggers and architecture questions. When both readiness and architecture apply, one child covers both. A settled review carries into implementation unless the direction, scope, or design materially changes.
+Readiness Review owns independent scrutiny of unresolved material design or safety assumptions. Structural indicators guide inspection rather than automatically requiring a child. Source-backed, reversible local repairs can proceed when remaining proof can finish before consequential use. A required review includes relevant architecture questions and carries into implementation unless direction, scope, or design materially changes.
+
+The parent owns routine completion from adequate evidence. Routes do not automatically require independent signoff or stacked maintainability passes. Deeper maintainability skills address named problems, and child briefs point to primary sources rather than copying the specification. Consequential correctness review and verification still apply.
 
 During Correctness Review, independent non-destructive checks may run against the unchanged reviewed artifact. The review still blocks mutation, delivery, and completion. Checks invalidated by later fixes must run again.
 

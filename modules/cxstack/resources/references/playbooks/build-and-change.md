@@ -6,7 +6,7 @@ Feature, Diagnose and Fix, Performance, Refactor, and Prototype use this spine a
 2. **Establish route evidence.** Complete the active route's required baseline before implementation.
 3. **Work in verifiable units.** Make one coherent change at a time, check its local claim, and keep shared writes under one owner.
 4. **Surface material deviations.** Own routine implementation choices. Stop mutation and return to Investigation and Decision when a new material architecture, scope, rollout, or maintenance fork appears.
-5. **Hand off to Review.** Record changed files, observed evidence, failed attempts, checks not run, blockers, and known limits. Do not approve your own implementation.
+5. **Complete or review by consequence.** The parent owns verification and may complete routine work with adequate evidence. Apply [Review](review.md) when artifact review is explicitly requested or its correctness consequence gate is met. A change route alone does not require independent signoff. When review is earned, hand off the relevant artifact, evidence, failures, and unresolved claims.
 
 Treat accepted review findings and settled decisions as constraints. Reopen a rejected direction only when new evidence invalidates its reason, and state that evidence before implementing it.
 

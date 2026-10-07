@@ -1,8 +1,14 @@
 # Readiness Review
 
-Use when the consequence gate is met and an implementation direction needs approval, or before implementation when a structural trigger below applies. A settled review covers the implementation route that follows unless direction, scope, or design materially changes.
+Require independent review when a material design direction or load-bearing safety assumption remains unresolved and getting it wrong could make action costly, hidden, hard to undo, or materially affect production, data, security, money, deployment, shared interfaces, or architecture. Resolve cheap factual questions from current source first.
 
-## Structural triggers
+Reversible local artifact preparation may proceed without a separate readiness child when current source, authority, ownership, and callers settle the material direction, and remaining risks can be tested before consequential action or use. A declaration that a plan is settled is not evidence. An unresolved material assumption still requires review before that action or use. User-owned choices still require escalation.
+
+A settled review covers the implementation route that follows unless direction, scope, or design materially changes. Correctness review and verification remain governed by Review.
+
+## Structural indicators
+
+Use these to inspect callers, ownership, and policy. They do not automatically require a child.
 
 1. It adds or changes a public interface.
 2. It crosses a module, service, database, or process boundary.
@@ -13,13 +19,13 @@ Use when the consequence gate is met and an implementation direction needs appro
 
 ## One review
 
-Launch one fresh background child with `spawn_agent` using the complementary choice from Model roles. The child is read only. When a structural trigger applies, include the architecture questions in this same review, not a second child.
+When review is required, launch one fresh background child with `spawn_agent` using the complementary choice and brief guidance from Model roles. The child is read only. Include relevant architecture questions in this same review, not a second child.
 
 Give the child primary evidence, not a persuasive author summary:
 
 1. The originating request and linked evidence already inspected.
 2. Project rules, relevant source paths, and the traced current-system model.
-3. Credible directions, the proposed direction, and why alternatives lost.
+3. The proposed direction and any credible alternatives relevant to the unresolved decision.
 4. Open facts and judgment questions.
 5. Intended scope, exclusions, and proof plan.
 

@@ -6,7 +6,7 @@ Under **Establish route evidence**:
 
 1. **Name the behavior and consumer.** State the changed user outcome, unchanged behavior, acceptance examples, and important failure states.
 2. **Name the data shape and owner.** Identify the values, states, actors, writers, readers, and owning seam before writing logic.
-3. **Check readiness.** Apply the structural triggers and review requirements in Readiness Review.
+3. **Check readiness.** Apply the review condition and inspection guidance in Readiness Review.
 4. **Confirm the implementation contract.** Do not mutate while a required product, architecture, rollout, or maintenance decision remains open.
 
 Under **Work in verifiable units**:

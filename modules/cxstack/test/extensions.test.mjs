@@ -178,6 +178,8 @@ describe("CX extension wiring", () => {
 
 		const activation = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(activation.message.customType).toBe(CX_ACTIVE_MESSAGE);
+		expect(activation.message.content).toContain("for unresolved material design or safety assumptions");
+		expect(activation.message.content).not.toContain("before consequential implementation approval or structural changes");
 		expect(harness.entries[0].data.version).toBe(
 			createHash("sha256").update(activation.message.content).digest("hex").slice(0, 12),
 		);

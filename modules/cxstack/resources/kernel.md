@@ -57,7 +57,7 @@ Load only what helps:
 
 - [Handoff](references/handoff.md) at a real session boundary.
 - [Model roles](references/model-roles.md) before choosing a child model.
-- [Readiness review](references/readiness-review.md) before consequential implementation approval or structural changes.
+- [Readiness review](references/readiness-review.md) for unresolved material design or safety assumptions before consequential use.
 - [Correctness review](references/correctness-review.md) during the Review route.
 - [Repository reconnaissance](references/reconnaissance.md) when exploration would consume substantial main context.
 - [Judge](references/judge.md) only for an additional independent challenge not already owned by a route.

@@ -169,7 +169,7 @@ test("projected continuations reject context edits and compaction instead of sil
     const ids = Array.from({ length: 8 }, (_, i) => manager.appendMessage(fauxAssistantMessage(`ORIGINAL_${i} ${"qualification ".repeat(90)}`)));
     const evidenceId = `${manager.getSessionId()}:${entry}`;
     const tool = memoryOperations(service).find(tool => tool.name === "memory_evidence")!;
-    const ctx = { cwd: "/tmp", sessionManager: manager, getContextUsage: () => ({ contextWindow: 2100, tokens: 0 }), model: { maxTokens: 0 } } as never;
+    const ctx = { cwd: "/tmp", sessionManager: manager, isProjectTrusted: () => false, getContextUsage: () => ({ contextWindow: 2100, tokens: 0 }), model: { maxTokens: 0 } } as never;
     const first = await tool.execute("first", { evidenceId, view: "projected" }, undefined, ctx);
     expect(first.isError).not.toBe(true);
     const page = first.details as any; expect(page.complete).toBe(false); expect(page.nextCursor).toBeTruthy();

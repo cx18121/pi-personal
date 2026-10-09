@@ -1,4 +1,4 @@
-import { estimateTokens, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, SettingsManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createHash } from "node:crypto";
 
 export const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -10,7 +10,10 @@ export function responseBudget(ctx: ExtensionContext) {
   const window = usage?.contextWindow ?? ctx.model?.contextWindow;
   if (!window) return Infinity;
   const used = usage?.tokens ?? ctx.sessionManager.buildSessionProjection().messages.reduce((sum, message) => sum + estimateTokens(message), 0);
-  return Math.max(0, window - used - (ctx.model?.maxTokens ?? 0));
+  // The model's maximum output is a capacity, not the reserve used by Pi.
+  const settings = SettingsManager.create(ctx.cwd, undefined, { projectTrusted: ctx.isProjectTrusted() });
+  const reserve = Math.min(settings.getCompactionReserveTokens(ctx.model), ctx.model?.maxTokens ?? Infinity);
+  return Math.max(0, window - used - reserve);
 }
 
 export function pageUnits<T>(items: T[], snapshot: string, budget: number, cursor?: string, limit?: number, metadata: Record<string, unknown> = {}, continuation: Record<string, unknown> = {}) {

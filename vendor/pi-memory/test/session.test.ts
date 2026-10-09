@@ -73,6 +73,40 @@ test("actual Pi payloads contain complete topics, not bodies/scratchpads; fresh 
   } finally { h.session.dispose(); }
 });
 
+test("actual Pi continuation admits memory tools and inventory in the reported long-session scenario", async () => {
+  const h = await harness(pi => pi.on("message_end", event => {
+    if (event.message.role !== "assistant" || event.message.stopReason !== "toolUse") return;
+    // Faux estimates usage from its tiny synthetic prompt. Install the observed
+    // provider usage at Pi's finalized-message seam before tools execute.
+    return { message: { ...event.message, usage: { ...event.message.usage,
+      input: 228_062, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 228_062 } } };
+  })), oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = path.join(h.root, "agent");
+  fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "settings.json"), JSON.stringify({ compaction: { reserveTokens: 27_200 } }));
+  h.session.settingsManager.applyOverrides({ compaction: { reserveTokens: 27_200 } });
+  h.session.model!.contextWindow = 272_000; h.session.model!.maxTokens = 128_000;
+  const saved = saveRecord(h.locations.projectDir!, input("Only investigate CI failures when mentioned."));
+  let continuation = "";
+  h.faux.setResponses([fauxAssistantMessage([fauxToolCall("memory_evidence", { query: "yeah agreed." }),
+    fauxToolCall("memory_read", { scope: "project", id: saved.record.id })], { stopReason: "toolUse" }), context => {
+    expect(h.session.getContextUsage()!.tokens).toBeGreaterThanOrEqual(228_062);
+    continuation = JSON.stringify(context.messages);
+    return fauxAssistantMessage("The complete decision is available.");
+  }]);
+  try {
+    await h.session.prompt("yeah agreed.");
+    const results = h.session.messages.filter(message => message.role === "toolResult");
+    expect(results).toHaveLength(2); expect(results.every(message => !message.isError)).toBe(true);
+    expect(continuation).toContain(saved.record.content);
+    expect(continuation).not.toContain("Memory inventory/standing preferences could not be admitted");
+    expect(h.manager.getBranch().some(entry => entry.type === "compaction")).toBe(false);
+    expect(h.faux.state.callCount).toBe(2);
+  } finally {
+    h.session.dispose();
+    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+  }
+});
+
 test("request inventory explicitly distinguishes empty scopes from unavailable coverage", async () => {
   const h = await harness();
   let snapshot = "";
@@ -477,7 +511,7 @@ test("optional current readers keep their span and unitization across continuati
     const evidenceId = `${h.manager.getSessionId()}:${sourceEntry}`, service = new MemorySession();
     const tool = memoryOperations(service).find(tool => tool.name === "memory_evidence")!;
     let budget = 2000;
-    const ctx = { cwd: h.cwd, sessionManager: h.manager, getContextUsage: () => ({ contextWindow: budget, tokens: 0 }), model: { maxTokens: 0 } } as never;
+    const ctx = { cwd: h.cwd, sessionManager: h.manager, isProjectTrusted: () => false, getContextUsage: () => ({ contextWindow: budget, tokens: 0 }), model: { maxTokens: 0 } } as never;
     const first = await tool.execute("initial", { evidenceId }, undefined, ctx);
     expect(first.isError).not.toBe(true);
     const initial = first.details as any; expect(initial.complete).toBe(false);

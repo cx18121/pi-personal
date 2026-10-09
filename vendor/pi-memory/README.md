@@ -10,6 +10,8 @@ When remembered knowledge could change the task, the agent writes a short task-s
 
 There are no fixed character or record-count limits on semantic coverage. Tools admit complete units using the available model context and output reserve. When a complete result does not fit, continuation returns complete cues, Markdown paragraphs/code fences, or JSON structural units. The response explicitly identifies incomplete coverage. Cursors bind the query, scope, and snapshot. Changed storage requires a new lookup. A paragraph or code fence larger than the available context produces an explicit error rather than a misleading prefix or summary.
 
+The context budget uses Pi's file-backed `compaction.reserveTokens` setting, capped by the model's maximum output tokens. Pi's settings resolver applies the active model override and merges trusted project settings with agent-directory settings. The launch workspace owns these settings, not the repository selected by `memory_focus`. `PI_CODING_AGENT_DIR` selects a different agent directory. SDK-only in-memory settings overrides are not exposed through the extension context and are not used by this lookup. A large maximum output capacity alone does not block memory reads.
+
 Lexical retrieval can miss paraphrases, and topic selection depends on the agent. The system does not guarantee that an agent reads every applicable record or follows every remembered preference. Recognition and future-task usefulness need model-level evaluation as well as storage tests.
 
 ## Learning and evidence
@@ -77,6 +79,8 @@ If a scope has old Markdown but no active ledger, reads and writes report that s
 bun test ./vendor/pi-memory/test
 npm --prefix vendor/pi-memory run typecheck
 ```
+
+After updating the extension, run `/reload` in existing Pi sessions to load the new code. Reload does not recover decisions that were never saved.
 
 Session tests use actual Pi sessions with a faux provider. They prove plumbing and lifecycle behavior, not model recognition. `test/live-recognition.ts` is a separate paid synthetic model evaluation. `test/performance.ts` measures local latency without provider requests.
 

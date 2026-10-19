@@ -1,17 +1,9 @@
-# Prototype
+# Prototyping
 
-Use for a disposable artifact that answers a material design, interaction, state-model, or empirical question. Read the Change Spine first and apply these route-specific requirements under its named concepts.
+Prefer a narrow, durable implementation when it can answer the open questions. Recommend a disposable prototype when it resolves a named uncertainty more effectively, and explain that trade-off. Choose the smallest artifact that makes the alternatives concrete. Keep it separate from production code and make its sample data and simulated behavior clear.
 
-Under **Establish route evidence**:
+Judge whether the prototype is good enough to inform the decision. Alternatives should be representative and meaningfully different. Improve weaknesses that would distort the comparison, then hand it over when the user owns the judgment. Their feedback determines the next useful work.
 
-1. **Name one decision.** State the question, competing outcomes, and the observation that would decide it.
-2. **Choose the smallest observable artifact.** Use a local throwaway file or isolated path. Do not build production scaffolding, persistence, polish, or abstractions unless they are the question.
-3. **Define disposal.** Mark the artifact as a prototype and keep it outside the production path.
+For a technical question, exercise the specific behavior needed to answer it. Record what the comparison established and what remains unknown. A prototype provides evidence for a later implementation, not production-ready code.
 
-Under **Work in verifiable units**:
-
-4. **Build materially different cases.** Make the important state and result visible after each action or variant.
-5. **Observe and decide.** Exercise the artifact, compare the outcomes, and record the learned contract and remaining limits.
-6. **Stop before productionization.** Keep, remove, or archive the prototype only as explicitly agreed. A later production change starts a Feature route from the learned contract.
-
-The prototype answers the question. It is not the implementation.
+Use the `prototype` skill for artifact patterns when needed. The question and this completion standard determine how much of the pattern is useful.

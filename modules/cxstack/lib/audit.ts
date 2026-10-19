@@ -18,6 +18,7 @@ export type CxAuditSession = {
 	kernelVersions: string[];
 	references: Array<{
 		reference: string;
+		kind: "read-result" | "legacy";
 		version: string;
 	}>;
 };
@@ -61,8 +62,6 @@ export const extractCxSessionEvidence = (content: string): CxSessionEvidence => 
 
 		if (entry.type === "custom" && entry.customType === CX_STATE_ENTRY && isRecord(entry.data)) {
 			if (entry.data.active === true) used = true;
-			const version = stringValue(entry.data.version);
-			if (entry.data.active === true && version !== undefined) kernelVersions.add(version);
 		}
 
 		if (
@@ -83,7 +82,8 @@ export const extractCxSessionEvidence = (content: string): CxSessionEvidence => 
 			const reference = stringValue(entry.data.reference);
 			const version = stringValue(entry.data.version);
 			if (reference === undefined || version === undefined) continue;
-			references.set(`${reference}\u0000${version}`, { reference, version });
+			const kind = entry.data.kind === "read-result" ? "read-result" : "legacy";
+			references.set(`${reference}\u0000${kind}\u0000${version}`, { reference, kind, version });
 		}
 	}
 
@@ -93,6 +93,7 @@ export const extractCxSessionEvidence = (content: string): CxSessionEvidence => 
 		references: [...references.values()].sort(
 			(left, right) =>
 				left.reference.localeCompare(right.reference) ||
+				left.kind.localeCompare(right.kind) ||
 				left.version.localeCompare(right.version),
 		),
 	};

@@ -1,17 +1,9 @@
-# Diagnose and Fix
+# Diagnosis
 
-Use for consequential defects, regressions, and incidents when repair is requested. Read the Change Spine first and apply these route-specific requirements under its named concepts.
+Distinguish the reported symptom, its cause, and the observation that would show a real fix rather than a masked failure. Treat the supplied explanation as a hypothesis.
 
-Under **Establish route evidence**:
+Choose evidence that separates plausible causes. Preserve the relevant raw event or value when transformations could hide the problem. Trace the affected path across actors, states, and systems as needed. For a regression, the introducing change or a bisect can be more useful than exploring the whole system.
 
-1. **Reproduce the exact failure.** Identify the affected object or surface, expected behavior, observed behavior, and the observation that distinguishes fixed from masked.
-2. **Preserve raw evidence.** Capture the source event, value, trace, or runtime boundary before transforming it.
-3. **Trace the cause.** Keep confirmed facts, falsified hypotheses, and open questions separate. Trace the object across actors, states, queues, runtimes, and data transformations. For regressions, inspect the introducing diff or bisect before designing the fix.
-4. **Name the owning seam and root cause.** Treat the supplied theory as a lead. Do not turn an urgent repair into an architecture project, but correct the model when the root cause requires it.
+Keep confirmed facts, rejected hypotheses, and open questions separate. Repair the cause at its owner. Build expected results from business meaning or independent evidence rather than repeating the production formula in the assertion.
 
-Under **Work in verifiable units**:
-
-5. **Repair the root cause.** Build expected values from source events and business meaning rather than repeating the production formula in a query or fixture.
-6. **Prove the original symptom is gone.** Exercise the same surface and include the relevant empty, default, fallback, retry, or masked behavior. State the closest verified boundary when the real surface is unavailable.
-
-An explanation is not a fix. A workaround passing does not prove root cause.
+Check the original symptom and any behavior the fix puts at meaningful risk. When the real surface is unavailable, state the boundary actually verified. An explanation or successful workaround alone does not establish a root-cause repair.

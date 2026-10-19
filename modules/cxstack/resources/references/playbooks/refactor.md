@@ -1,17 +1,7 @@
-# Refactor
+# Refactoring
 
-Use for consequential behavior-preserving changes to shared structure, ownership, naming, or representation. Read the Change Spine first and apply these route-specific requirements under its named concepts.
+Identify the complexity that should disappear, such as a duplicated fact, scattered change, leaky interface, or unnecessary concept. Trace the relevant callers and ownership before choosing a simpler shape.
 
-Under **Establish route evidence**:
+Preserve the observable behavior that matters to those callers. Use existing evidence where it is adequate and investigate uncertain behavior before changing it. Move callers to the new owner and remove the obsolete path. Retain compatibility only for real consumers that need it.
 
-1. **Pin current behavior.** Capture the observable outputs, public interfaces, callers, error behavior, and relevant performance before moving structure.
-2. **Name the complexity to remove.** State which duplicated fact, scattered change, leaky interface, or reader burden disappears.
-3. **Choose the target seam.** Trace callers and ownership. Apply the review condition and inspection guidance in Readiness Review.
-4. **Define deletion.** Name the old path, adapter, helper, or representation that the refactor removes. A second path is not a completed refactor.
-
-Under **Work in verifiable units**:
-
-5. **Move callers and delete the old path.** Avoid compatibility layers without real external consumers.
-6. **Re-run the pinned observations.** Prove behavior stayed equivalent and inspect the final diff for moved rather than removed complexity.
-
-Do not smuggle feature behavior into a refactor. If behavior must change, reroute visibly to Feature.
+Judge the result by what became easier to understand, change, or use. Moving the same decisions into more files is not simplification. Check behavior put at risk by the structural change. If the work also needs a material behavior change, resolve that scope with the user rather than disguising it as equivalent behavior.

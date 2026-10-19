@@ -7,7 +7,7 @@ const instructionsTemplate = readFileSync(
 	fileURLToPath(new URL("../resources/reflect.md", import.meta.url)),
 	"utf8",
 )
-	.replace("{{CXSTACK_ROOT}}", cxstackRoot)
+	.replaceAll("{{CXSTACK_ROOT}}", cxstackRoot)
 	.trim();
 
 export default function registerReflect(pi: ExtensionAPI) {

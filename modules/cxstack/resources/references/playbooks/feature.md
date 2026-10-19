@@ -1,17 +1,9 @@
-# Feature
+# Product and system design
 
-Use for material new or changed production behavior. Read the Change Spine first and apply these route-specific requirements under its named concepts.
+Make the proposed experience concrete enough to judge before committing to an implementation shape. An agreed goal does not settle navigation, interaction, ownership, or what the user sees while work is happening. Use an example, flow, or sketch when it would expose a consequential misunderstanding more effectively than prose. When choosing between a durable implementation and a disposable artifact, use the [prototyping guidance](prototype.md).
 
-Under **Establish route evidence**:
+Trace the existing system that serves the need. Prefer improving its capabilities and removing obsolete paths over creating a parallel setup. Keep different actors, data, states, and writers distinct, with a clear owner for each behavior.
 
-1. **Name the behavior and consumer.** State the changed user outcome, unchanged behavior, acceptance examples, and important failure states.
-2. **Name the data shape and owner.** Identify the values, states, actors, writers, readers, and owning seam before writing logic.
-3. **Check readiness.** Apply the review condition and inspection guidance in Readiness Review.
-4. **Confirm the implementation contract.** Do not mutate while a required product, architecture, rollout, or maintenance decision remains open.
+Resolve user-owned choices before building around them. Choose routine engineering details yourself. Keep the agreed experience and relevant examples as the implementation's reference, rather than producing a second specification of the same decisions.
 
-Under **Work in verifiable units**:
-
-5. **Implement through the owning seam.** Prefer existing patterns and remove obsolete paths instead of layering another representation.
-6. **Exercise the changed behavior.** Observe the consumer surface, important failure state, and preserved behavior with the project's supported tools.
-
-The main agent implements by default. Use children for bounded judgment, review, or reconnaissance, not normal project writes.
+Judge the result through the experience the consumer will actually use. Verify important behavior and uncertainties with the evidence that can settle them. A working implementation can still be the wrong product.

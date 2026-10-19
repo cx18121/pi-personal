@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import registerCxAudit from "../extensions/audit.ts";
@@ -15,7 +16,7 @@ import {
 
 const moduleRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const createHarness = () => {
+const createHarness = (sessionManager) => {
 	const handlers = new Map();
 	const commands = new Map();
 	const entries = [];
@@ -32,9 +33,13 @@ const createHarness = () => {
 		},
 		appendEntry(customType, data) {
 			entries.push({ customType, data });
+			sessionManager?.appendCustomEntry(customType, data);
 		},
 		sendMessage(message, options) {
 			messages.push({ message, options });
+			sessionManager?.appendCustomMessageEntry(
+				message.customType, message.content, message.display, message.details,
+			);
 		},
 		sendUserMessage(content, options) {
 			userMessages.push({ content, options });
@@ -48,7 +53,7 @@ const createHarness = () => {
 	} = {}) => ({
 		cwd: "/workspace",
 		isIdle: () => idle,
-		sessionManager: {
+		sessionManager: sessionManager ?? {
 			getEntries: () => sessionEntries,
 			buildContextEntries: () => contextEntries,
 			getSessionFile: () => sessionFile,
@@ -92,6 +97,102 @@ const directiveEntry = (customType) => ({
 });
 
 describe("CX extension wiring", () => {
+	test("delivers an updated kernel after two reloads before the next turn", () => {
+		const session = SessionManager.inMemory("/workspace");
+		session.appendCustomEntry(CX_STATE_ENTRY, { active: true, version: "old" });
+		session.appendCustomMessageEntry(CX_ACTIVE_MESSAGE, "Old kernel", false, {
+			directive: "active", version: "old",
+		});
+		for (let reload = 0; reload < 2; reload += 1) {
+			const harness = createHarness(session);
+			registerCx(harness.pi);
+			const ctx = harness.context();
+			harness.handlers.get("session_start")({ reason: "reload" }, ctx);
+			if (reload === 0) continue;
+			const result = harness.handlers.get("before_agent_start")(
+				{ systemPromptOptions: { sections: {} } }, ctx,
+			);
+			expect(result?.message.customType).toBe(CX_ACTIVE_MESSAGE);
+			expect(result?.message.details.version).toBe(
+				createHash("sha256").update(result.message.content).digest("hex").slice(0, 12),
+			);
+		}
+	});
+
+	test("updates an older selected branch even after delivering the new kernel elsewhere", () => {
+		const session = SessionManager.inMemory("/workspace");
+		session.appendCustomEntry(CX_STATE_ENTRY, { active: true, version: "old" });
+		const oldBranch = session.appendCustomMessageEntry(CX_ACTIVE_MESSAGE, "Old kernel", false, {
+			directive: "active", version: "old",
+		});
+		const harness = createHarness(session);
+		registerCx(harness.pi);
+		const ctx = harness.context();
+		harness.handlers.get("session_start")({ reason: "reload" }, ctx);
+		const current = harness.handlers.get("before_agent_start")(
+			{ systemPromptOptions: { sections: {} } }, ctx,
+		).message;
+		session.appendCustomMessageEntry(current.customType, current.content, false, current.details);
+		session.branch(oldBranch);
+		harness.handlers.get("session_tree")({}, ctx);
+		const result = harness.handlers.get("before_agent_start")(
+			{ systemPromptOptions: { sections: {} } }, ctx,
+		);
+		expect(result?.message.content).toBe(current.content);
+		expect(result?.message.details.version).toBe(current.details.version);
+	});
+
+	test("reuses an already delivered current kernel after reload", () => {
+		const session = SessionManager.inMemory("/workspace");
+		const first = createHarness(session);
+		registerCx(first.pi);
+		first.handlers.get("session_start")({ reason: "startup" }, first.context());
+		const delivered = first.handlers.get("before_agent_start")(
+			{ systemPromptOptions: { sections: {} } }, first.context(),
+		).message;
+		session.appendCustomMessageEntry(delivered.customType, delivered.content, false, delivered.details);
+		const restored = createHarness(session);
+		registerCx(restored.pi);
+		restored.handlers.get("session_start")({ reason: "reload" }, restored.context());
+		const event = { systemPromptOptions: { sections: {} } };
+		expect(restored.handlers.get("before_agent_start")(event, restored.context())).toBeUndefined();
+		expect(event.systemPromptOptions.sections.cx_marker).toBe(CX_MARKER);
+		expect(restored.entries).toEqual([]);
+	});
+
+	test("fingerprints the observed read result rather than startup file contents", () => {
+		const harness = createHarness();
+		registerCx(harness.pi);
+		const ctx = harness.context();
+		harness.handlers.get("session_start")({ reason: "startup" }, ctx);
+		const text = "Reference content changed after the extension loaded.";
+		harness.handlers.get("tool_result")({
+			toolName: "read", input: { path: join(moduleRoot, "resources/references/playbooks/prototype.md") },
+			content: [{ type: "text", text }], isError: false,
+		}, ctx);
+		expect(harness.entries.at(-1)).toEqual({
+			customType: CX_REFERENCE_ENTRY,
+			data: {
+				reference: "playbooks/prototype", kind: "read-result",
+				version: createHash("sha256").update(text).digest("hex").slice(0, 12),
+			},
+		});
+	});
+
+	test("does not count a nested read as a model-facing reference observation", () => {
+		const harness = createHarness();
+		registerCx(harness.pi);
+		const ctx = harness.context();
+		harness.handlers.get("session_start")({ reason: "startup" }, ctx);
+		const count = harness.entries.length;
+		harness.handlers.get("tool_result")({
+			toolName: "read", parentToolCallId: "codemode-call",
+			input: { path: join(moduleRoot, "resources/references/playbooks/prototype.md") },
+			content: [{ type: "text", text: "Discarded inside a script" }], isError: false,
+		}, ctx);
+		expect(harness.entries).toHaveLength(count);
+	});
+
 	test("rejects busy commands before every state and model side effect", async () => {
 		const harness = createHarness();
 		registerCx(harness.pi);
@@ -114,7 +215,7 @@ describe("CX extension wiring", () => {
 			expect(harness.entries).toEqual([
 				{
 					customType: CX_STATE_ENTRY,
-					data: { active: true, version: expect.any(String) },
+					data: { active: true },
 				},
 			]);
 			expect(harness.statuses.at(-1)).toEqual({ key: "cx-mode", value: "CX" });
@@ -170,7 +271,7 @@ describe("CX extension wiring", () => {
 		expect(harness.entries).toEqual([
 			{
 				customType: CX_STATE_ENTRY,
-				data: { active: true, version: expect.any(String) },
+				data: { active: true },
 			},
 		]);
 		expect(harness.userMessages).toEqual([{ content: task, options: undefined }]);
@@ -178,9 +279,7 @@ describe("CX extension wiring", () => {
 
 		const activation = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(activation.message.customType).toBe(CX_ACTIVE_MESSAGE);
-		expect(activation.message.content).toContain("for unresolved material design or safety assumptions");
-		expect(activation.message.content).not.toContain("before consequential implementation approval or structural changes");
-		expect(harness.entries[0].data.version).toBe(
+		expect(activation.message.details.version).toBe(
 			createHash("sha256").update(activation.message.content).digest("hex").slice(0, 12),
 		);
 		expect(activation.systemPrompt).toBeUndefined();
@@ -209,7 +308,7 @@ describe("CX extension wiring", () => {
 		expect(harness.entries).toEqual([
 			{
 				customType: CX_STATE_ENTRY,
-				data: { active: true, version: expect.any(String) },
+				data: { active: true },
 			},
 			{ customType: CX_STATE_ENTRY, data: { active: false } },
 		]);
@@ -230,16 +329,17 @@ describe("CX extension wiring", () => {
 
 		const referencePath = join(
 			moduleRoot,
-			"resources/references/playbooks/build-and-change.md",
+			"resources/references/playbooks/prototype.md",
 		);
 		harness.handlers.get("tool_result")(
-			{ toolName: "read", input: { path: referencePath }, isError: false },
+			{ toolName: "read", input: { path: referencePath }, content: [{ type: "text", text: "Reference text" }], isError: false },
 			ctx,
 		);
 		expect(harness.entries.at(-1)).toEqual({
 			customType: CX_REFERENCE_ENTRY,
 			data: {
-				reference: "playbooks/build-and-change",
+				reference: "playbooks/prototype",
+				kind: "read-result",
 				version: expect.any(String),
 			},
 		});
@@ -247,11 +347,7 @@ describe("CX extension wiring", () => {
 
 		const count = harness.entries.length;
 		harness.handlers.get("tool_result")(
-			{ toolName: "read", input: { path: referencePath, offset: 2 }, isError: false },
-			ctx,
-		);
-		harness.handlers.get("tool_result")(
-			{ toolName: "read", input: { path: referencePath, limit: 1 }, isError: false },
+			{ toolName: "read", input: { path: referencePath }, content: [], isError: false },
 			ctx,
 		);
 		harness.handlers.get("tool_result")(
@@ -296,7 +392,11 @@ describe("CX audit extension wiring", () => {
 			JSON.stringify({
 				type: "custom",
 				customType: CX_STATE_ENTRY,
-				data: { active: true, version: "kernel-v1" },
+				data: { active: true },
+			}),
+			JSON.stringify({
+				type: "custom_message", customType: CX_ACTIVE_MESSAGE,
+				details: { directive: "active", version: "kernel-v1" },
 			}),
 		].join("\n");
 		registerCxAudit(harness.pi, {
@@ -313,7 +413,7 @@ describe("CX audit extension wiring", () => {
 		await harness.commands.get("cx-audit").handler("", ctx);
 		expect(harness.userMessages).toEqual([
 			{
-				content: "Audit the recent CXStack sessions in the supplied manifest.",
+				content: "Audit the selected CXStack sessions in the supplied manifest.",
 				options: undefined,
 			},
 		]);
@@ -322,9 +422,6 @@ describe("CX audit extension wiring", () => {
 		expect(injected.message.customType).toBe("cx-audit-instructions");
 		expect(injected.message.content).toContain("source-session");
 		expect(injected.message.content).toContain("kernel-v1");
-		expect(injected.message.content).toContain("Do not produce scores");
-		expect(injected.message.content).toContain("complete approved cohort");
-		expect(injected.message.content).toContain("no more than six sessions at a time");
 		expect(injected.message.content).not.toContain('"cwd"');
 		expect(injected.message.content).not.toContain("{{SESSION_MANIFEST}}");
 		expect(harness.handlers.get("before_agent_start")({}, ctx)).toBeUndefined();
@@ -368,8 +465,6 @@ describe("Reflect extension wiring", () => {
 		]);
 		const injected = harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, ctx);
 		expect(injected.message.customType).toBe("reflect-instructions");
-		expect(injected.message.content).toContain("Wait for selection");
-		expect(injected.message.content).toContain("CXStack change.");
 		expect(injected.message.content).toContain("`/sessions/current.jsonl`");
 		expect(injected.message.content).not.toContain("{{CXSTACK_ROOT}}");
 		expect(injected.message.content).not.toContain("{{SESSION_PATH}}");

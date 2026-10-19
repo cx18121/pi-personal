@@ -18,7 +18,6 @@ export type CxSessionStartReason = "startup" | "reload" | "new" | "resume" | "fo
 export type CxRuntimeState = {
 	active: boolean;
 	hasState: boolean;
-	version?: string;
 	pending?: CxDirective;
 };
 
@@ -26,6 +25,7 @@ export type CxEntry = {
 	type: string;
 	customType?: string;
 	data?: unknown;
+	details?: unknown;
 };
 
 export type CxCommandDecision =
@@ -45,10 +45,7 @@ const stateValue = (entry: CxEntry) => {
 		return undefined;
 	}
 	if (typeof entry.data.active !== "boolean") return undefined;
-	return {
-		active: entry.data.active,
-		version: typeof entry.data.version === "string" ? entry.data.version : undefined,
-	};
+	return { active: entry.data.active };
 };
 
 export const emptyCxState = (): CxRuntimeState => ({
@@ -70,11 +67,7 @@ export const restoreCxState = (entries: readonly CxEntry[]): CxRuntimeState => {
 	const value = entries.map(stateValue).findLast((item) => item !== undefined);
 	return value === undefined
 		? emptyCxState()
-		: {
-				active: value.active,
-				hasState: true,
-				...(value.active && value.version !== undefined ? { version: value.version } : {}),
-			};
+		: { active: value.active, hasState: true };
 };
 
 export const restoreCxStateFile = (content: string) => {
@@ -120,23 +113,27 @@ export const latestCxDirective = (entries: readonly CxEntry[]): CxDirective | un
 const latestDirectiveEntry = (entries: readonly CxEntry[]) =>
 	entries.findLast((entry) => directiveValue(entry) !== undefined);
 
-const directiveMatches = (entry: CxEntry | undefined, expected: CxDirective) =>
-	entry !== undefined && directiveValue(entry) === expected;
+const directiveMatches = (
+	entry: CxEntry | undefined,
+	expected: CxDirective,
+	activeVersion: string,
+) =>
+	entry !== undefined &&
+	directiveValue(entry) === expected &&
+	(expected === "inactive" ||
+		(isRecord(entry.details) && entry.details.version === activeVersion));
 
 export const refreshPendingDirective = (
 	state: CxRuntimeState,
 	contextEntries: readonly CxEntry[],
-	activeVersion?: string,
+	activeVersion: string,
 ): CxRuntimeState => {
 	const expected = expectedCxDirective(state);
-	const versionChanged =
-		state.active && activeVersion !== undefined && state.version !== activeVersion;
 	return {
 		...state,
-		...(state.active && activeVersion !== undefined ? { version: activeVersion } : {}),
 		pending:
 			expected !== undefined &&
-			(versionChanged || !directiveMatches(latestDirectiveEntry(contextEntries), expected))
+			!directiveMatches(latestDirectiveEntry(contextEntries), expected, activeVersion)
 				? expected
 				: undefined,
 	};

@@ -1,111 +1,75 @@
 # CXStack
 
-CXStack is a sticky work mode for Pi. It asks one agent to own a task from intent through verification. The agent should make routine engineering choices itself and ask only when the remaining choice needs your judgment.
-
-It is based on the useful parts of [PStack](https://github.com/cursor/plugins/tree/main/pstack), adapted to Pi and this setup. It keeps the active prompt small and loads more guidance only when the task needs it.
+CXStack is a sticky work mode for Pi. It asks the agent to own the intended result, make routine engineering choices, and judge work from the consumer and maintainer experience.
 
 ## Use it
 
-New blank sessions start with CX active, so you can send tasks normally. The footer shows `CX` while it is active.
-
-You can still use `/cx` to start a task explicitly:
+New blank sessions start with CX active. The footer shows `CX`. Send tasks normally, or activate it explicitly:
 
 ```text
-/cx Fix the checkout regression. Reproduce it first and do not push.
+/cx Fix the checkout regression. Do not push.
 ```
 
-CX stays active for later prompts in the same session. Turn it off for that session with:
+Use `/cx off` to turn it off, and `/cx` to turn it back on. Explicit state survives reloads, forks, and tree changes. Historical sessions without CX state keep their prior behavior.
 
-```text
-/cx off
-```
+## What it changes
 
-Run `/cx` with no arguments to turn it back on. Explicit on or off state survives reloads, forks, and tree changes. Historical sessions created before default activation keep their prior state.
+The kernel emphasizes intent, useful outcomes, clear domain ownership, and removing unnecessary machinery. It asks the agent to spend verification effort on uncertainties that could change its judgment or next action. Source inspection, reasoning, execution, and user feedback can each be the appropriate evidence.
 
-## What to expect
+Discussion and review stay read only until changes are requested. Within authorized work, the agent chooses engineering methods without route announcements or workflow transitions. Material user-owned choices still come back to you. Commit, push, publication, deployment, and production mutation require authority for the action and target.
 
-CX asks the agent to:
+References provide techniques for product design, diagnosis, performance, refactoring, prototypes, review, delegation, delivery, and handoff. They are consulted when useful, not treated as stages every task must complete. Changes whose failure could be hidden or hard to undo require independent adversarial review before delivery unless you explicitly waive it. For other work, review is conditional on the value of another perspective. The review challenges the proposed direction as well as its implementation.
 
-- Find the intended result before accepting a proposed theory.
-- Judge the work from the consumer and maintainer experience.
-- Keep different actors, values, owners, states, and surfaces separate.
-- Remove obsolete machinery before adding more.
-- Use the fewest moving parts that completely solve the problem.
-- Investigate factual questions instead of asking you to decide them.
-- Verify the promised surface and stop confidence at the evidence.
+Todo creation, the writing baseline, model policy, and child waiting have their own owners outside CXStack. CXStack does not maintain a parallel plan or execution ledger.
 
-Direct is the default for ordinary questions, recommendations, reversible local work, and small fixes. Work earns a route only when a wrong result is costly, hidden, or hard to undo; when it materially affects production, persistent data, security, money, deployment, shared interfaces, or durable architecture; or when review or delivery is explicitly requested. A route names the authority boundary, not the amount of ceremony. Todo records actual independent work, dependencies, and waiting gates, never copied playbook steps. Direct work can escalate when consequences appear, and routed work can return to direct before process starts.
+## Session state and evidence
 
-In this setup, `~/.config/rpiv-todo/config.json` owns Todo creation guidance through the tool's prompt override. Global `~/.pi/agent/AGENTS.md` owns the writing baseline. Both live in the dotfiles `pi` package, outside CXStack. Install that package alongside CXStack and reload Pi after changing these prompts.
+The runtime stores one session-wide on/off state. Active directives identify the hash of the kernel content they contain. Restoration compares the selected context's directive with the current kernel, so an undelivered update or an older branch does not count as current guidance. Compaction can restore missing guidance.
 
-CX remains active across follow-up prompts, session tree changes, forks, reloads, and compaction. Its control state is one session boolean. It also records the content hash of the active kernel and of each successfully loaded reference. These markers contain no prompts, source code, paths, customer data, or tool output. CX does not store a plan, task summary, theory, or completion claim. The visible Todo list carries actual unfinished work when a task needs one.
-
-Readiness Review owns independent scrutiny of unresolved material design or safety assumptions. Structural indicators guide inspection rather than automatically requiring a child. Source-backed, reversible local repairs can proceed when remaining proof can finish before consequential use. A required review includes relevant architecture questions and carries into implementation unless direction, scope, or design materially changes.
-
-The parent owns routine completion from adequate evidence. Routes do not automatically require independent signoff or stacked maintainability passes. Deeper maintainability skills address named problems, and child briefs point to primary sources rather than copying the specification. Consequential correctness review and verification still apply.
-
-During Correctness Review, independent non-destructive checks may run against the unchanged reviewed artifact. The review still blocks mutation, delivery, and completion. Checks invalidated by later fixes must run again.
-
-## Audit
-
-Run `/cx-audit` when you want to examine recent CX sessions for ways to improve the system:
-
-```text
-/cx-audit
-```
-
-The audit excludes the current session and reviews every prior session that used the current kernel version. Before versioned sessions exist, it reviews every detected CX session. It processes the cohort in batches of six, reads only the exact selected local session files, and looks for evidence about ownership, changed decisions, unnecessary work, verification, delivery, and missed or ineffective guidance.
-
-The result is a qualitative review, not a score or dashboard. It proposes exact improvements and waits for approval before changing CXStack or any other durable surface.
+Reference metadata records the reference name and a fingerprint of a successful top-level `read` result observed by the extension. It contains no transcript text, source content, or absolute path. It does not prove a complete file was read, that the model retained it, or that another extension left the result unchanged afterward. Nested reads are excluded because their output may never reach the model. Older markers are labeled legacy rather than treated as equivalent evidence.
 
 ## Reflect
 
-Run `/reflect` after a useful session when you want to review what should improve next time:
+Run `/reflect` to propose durable improvements from the current session:
 
 ```text
-/reflect focus on the unnecessary questions and weak verification
+/reflect focus on unnecessary work and the quality of the result
 ```
 
-Reflect reads only the current session. The parent removes secrets, customer identifiers, private production data, and unrelated conversation before asking one fresh reviewer for a challenge.
+The parent can handle straightforward lessons. If another perspective would help, it sends a bounded sanitized digest to a reviewer rather than the raw transcript or private details. It may read the exact proposed destination to check whether a change is still needed.
 
-Reflect proposes exact changes and waits for your selection. It does not write memory, change a skill, edit project files, or create tracker items before approval.
+Reflect shows actionable proposals and waits for your selection before changing memory, skills, code, or guidance. It works whether CX is active or not.
 
-Reflect works whether CX is active or not.
+## Audit
 
-## Improve CXStack
+Run `/cx-audit` to examine prior CX sessions. The extension scans local candidate session files to select the cohort. The model receives a manifest, not those scanned transcript bodies, and reviews only the selected files.
 
-Reflect can classify a confirmed recurring failure as a CXStack change. It checks whether architecture can remove the failure first, then whether an automated check can catch it. It changes guidance only when code cannot enforce the behavior.
+The cohort contains every prior session with a recorded current-version kernel directive, excluding the current session. If none exist, it contains every detected CX session. This can be a large cohort. Session-wide version observations do not establish which guidance governed every individual task. Historical activation-state versions are not proof of kernel delivery.
 
-The parent reads this README and the current CXStack source, then shows the exact proposed patch. It waits for approval before editing. After approval, it applies only the selected change, runs focused checks, and tells you to reload.
+Audit looks for changes that improve work quality and judgment, including unnecessary effort and ineffective guidance. It proposes changes and waits for approval. It does not rewrite CXStack automatically.
 
-CXStack does not rewrite itself automatically.
+## Making changes
 
-## Try it
+Use current source and observed behavior rather than historical design records. Keep each rule with one owner. Preserve behavior tests for runtime contracts, not assertions that freeze instruction wording.
 
-Use your next small task with a clear expected result. State the delivery limit if it matters, e.g. `Do not push.`
+The focused runtime tests are:
 
-Watch whether the agent:
+```sh
+bun test ./modules/cxstack/test
+python3 -B -m unittest discover -s modules/cxstack/test -p '*_test.py'
+```
 
-- Keeps ordinary work direct and uses the operational consequence test before naming a route.
-- Keeps investigation read only until implementation is explicit.
-- Asks only when your judgment is needed.
-- Changes direction when evidence contradicts its first approach.
-- Returns to Investigation and Decision when a material fork appears.
-- Keeps true routes proportional and runs maintainability or correctness reviews only when their risk earns them.
-- Verifies the promised surface.
-- States the real delivery status without claiming more than it proved.
+The package's `test` script includes both. The Python tests use the standard library and make no provider calls.
 
-Send another prompt without `/cx`, then try `/cx off` and `/cx` to restore it. At the end of the session, run `/reflect` and approve only lessons that will remain useful.
+`test/reflect-privacy-probe.py` is an explicit synthetic live probe, separate from that suite. It requests a reviewer and requires at least one matching successful result, allowing a successful fallback after a failed attempt. Its sentinel check covers initial and follow-up messages sent to children, not the children's full context. It also checks selected local files for changes. It requires configured provider access and does not establish a general privacy guarantee.
 
-## Files
+After approved guidance or extension edits, use `/reload`. Commit, push, and publication remain separate actions.
 
-- [`extensions/cx.ts`](extensions/cx.ts) owns the `/cx` command, Pi session events, and version markers.
-- [`extensions/audit.ts`](extensions/audit.ts) owns the `/cx-audit` command.
-- [`lib/cx.ts`](lib/cx.ts) owns deterministic state and directive rules.
-- [`lib/audit.ts`](lib/audit.ts) selects recent sessions and extracts only CX version and reference markers.
-- [`resources/kernel.md`](resources/kernel.md) contains the compact active guidance.
-- [`resources/references`](resources/references/) contains the eight route playbooks, shared change spine, child review contracts, and conditional guidance.
-- [`resources/audit.md`](resources/audit.md) contains the private cross-session audit process.
-- [`extensions/reflect.ts`](extensions/reflect.ts) owns the `/reflect` command.
-- [`resources/reflect.md`](resources/reflect.md) contains the private Reflect process.
-- [`test/cxstack.test.ts`](test/cxstack.test.ts) and [`test/extensions.test.mjs`](test/extensions.test.mjs) cover the mechanical behavior.
+## Source owners
+
+- `extensions/cx.ts` and `lib/cx.ts` own activation, restoration, directive identity, and reference observations.
+- `extensions/audit.ts` and `lib/audit.ts` own cohort selection and audit initiation.
+- `extensions/reflect.ts` owns reflection initiation.
+- `resources/kernel.md` contains active guidance. `resources/references/` contains optional techniques.
+- `resources/audit.md` and `resources/reflect.md` contain the two learning workflows.
+- `test/cxstack.test.ts` and `test/extensions.test.mjs` cover runtime behavior. The live reflection probe is separate.

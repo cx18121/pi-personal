@@ -59,7 +59,7 @@ export default function registerCxAudit(
 	});
 
 	pi.registerCommand("cx-audit", {
-		description: "Review recent CX sessions for evidence-backed improvements",
+		description: "Review prior CX sessions for useful improvements",
 		handler: async (_args, ctx) => {
 			if (!ctx.isIdle()) {
 				ctx.ui.notify("Wait for Pi to finish, then retry /cx-audit.", "warning");
@@ -87,7 +87,7 @@ export default function registerCxAudit(
 				}
 
 				pendingInstructions = renderInstructions(sessions);
-				pi.sendUserMessage("Audit the recent CXStack sessions in the supplied manifest.");
+				pi.sendUserMessage("Audit the selected CXStack sessions in the supplied manifest.");
 			} catch (error) {
 				ctx.ui.notify(
 					`CX audit could not read recent sessions: ${error instanceof Error ? error.message : String(error)}`,

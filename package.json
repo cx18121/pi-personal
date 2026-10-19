@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
-    "test:routing": "node ./modules/cxstack/test/routing-probe.mjs",
+    "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test && python3 -B -m unittest discover -s modules/cxstack/test -p '*_test.py'",
     "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/answer.ts extensions/core-mcp.ts extensions/memory.ts extensions/subagent-idle.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [

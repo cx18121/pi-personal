@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -29,35 +29,11 @@ const kernelSource = readFileSync(join(resourceRoot, "kernel.md"), "utf8");
 const kernel = renderCxKernel(kernelSource, resourceRoot);
 const kernelVersion = cxContentVersion(kernel);
 
-const referenceFiles = (directory: string): string[] =>
-	readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) return referenceFiles(path);
-		return entry.isFile() && entry.name.endsWith(".md") ? [path] : [];
-	});
-
-const references = new Map(
-	referenceFiles(referencesRoot).map((path) => {
-		const content = readFileSync(path, "utf8");
-		return [
-			resolve(path),
-			{
-				reference: relative(referencesRoot, path).replace(/\.md$/, ""),
-				version: cxContentVersion(content),
-				lines: content.split("\n").length,
-			},
-		];
-	}),
-);
-
-const stateEntryData = (active: boolean) =>
-	active ? { active, version: kernelVersion } : { active };
-
 const directiveMessage = (directive: CxDirective) => ({
 	customType: directive === "active" ? CX_ACTIVE_MESSAGE : CX_INACTIVE_MESSAGE,
 	content: cxDirectiveContent(directive, kernel),
 	display: false,
-	details: { directive },
+	details: directive === "active" ? { directive, version: kernelVersion } : { directive },
 });
 
 const syncStatus = (ctx: ExtensionContext, active: boolean) => {
@@ -68,22 +44,13 @@ export default function registerCx(pi: ExtensionAPI) {
 	let state = emptyCxState();
 
 	const activateByDefault = () => {
-		state = {
-			active: true,
-			hasState: true,
-			version: kernelVersion,
-			pending: "active",
-		};
-		pi.appendEntry(CX_STATE_ENTRY, stateEntryData(true));
+		state = { active: true, hasState: true, pending: "active" };
+		pi.appendEntry(CX_STATE_ENTRY, { active: true });
 	};
 
 	const restoreCurrentSession = (ctx: ExtensionContext) => {
-		const restored = restoreCxState(ctx.sessionManager.getEntries());
-		if (restored.active && restored.version !== kernelVersion) {
-			pi.appendEntry(CX_STATE_ENTRY, stateEntryData(true));
-		}
 		state = refreshPendingDirective(
-			restored,
+			restoreCxState(ctx.sessionManager.getEntries()),
 			ctx.sessionManager.buildContextEntries(),
 			kernelVersion,
 		);
@@ -107,7 +74,7 @@ export default function registerCx(pi: ExtensionAPI) {
 				);
 				state = restoreCxState(ctx.sessionManager.getEntries());
 			}
-			if (state.hasState) pi.appendEntry(CX_STATE_ENTRY, stateEntryData(state.active));
+			if (state.hasState) pi.appendEntry(CX_STATE_ENTRY, { active: state.active });
 			state = refreshPendingDirective(
 				state,
 				ctx.sessionManager.buildContextEntries(),
@@ -152,19 +119,18 @@ export default function registerCx(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", (event, ctx) => {
-		if (!state.active || event.toolName !== "read" || event.isError) return;
+		if (!state.active || event.toolName !== "read" || event.isError || event.parentToolCallId) return;
 		const path = event.input.path;
 		if (typeof path !== "string") return;
-		const reference = references.get(resolve(ctx.cwd, path.replace(/^@/, "")));
-		if (reference === undefined) return;
-		const offset = event.input.offset;
-		const limit = event.input.limit;
-		const startsAtBeginning = offset === undefined || offset === 1;
-		const reachesEnd = limit === undefined || (typeof limit === "number" && limit >= reference.lines);
-		if (!startsAtBeginning || !reachesEnd) return;
+		const reference = relative(referencesRoot, resolve(ctx.cwd, path.replace(/^@/, "")))
+			.replaceAll("\\", "/");
+		if (isAbsolute(reference) || reference.startsWith("../") || !reference.endsWith(".md")) return;
+		const text = event.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
+		if (!text) return;
 		pi.appendEntry(CX_REFERENCE_ENTRY, {
-			reference: reference.reference,
-			version: reference.version,
+			reference: reference.slice(0, -3),
+			kind: "read-result",
+			version: cxContentVersion(text),
 		});
 	});
 
@@ -182,9 +148,6 @@ export default function registerCx(pi: ExtensionAPI) {
 
 			const decision = decideCxCommand(state, args, true);
 			state = applyCxCommand(state, decision);
-			if (decision.kind === "activate" || decision.kind === "activate-task") {
-				state = { ...state, version: kernelVersion };
-			}
 			syncStatus(ctx, state.active);
 
 			if (decision.kind === "noop-active") {
@@ -196,13 +159,13 @@ export default function registerCx(pi: ExtensionAPI) {
 				return;
 			}
 			if (decision.kind === "deactivate") {
-				pi.appendEntry(CX_STATE_ENTRY, stateEntryData(false));
+				pi.appendEntry(CX_STATE_ENTRY, { active: false });
 				pi.sendMessage(directiveMessage("inactive"), { triggerTurn: false });
 				ctx.ui.notify("CX off.", "info");
 				return;
 			}
 			if (decision.kind === "activate" || decision.kind === "activate-task") {
-				pi.appendEntry(CX_STATE_ENTRY, stateEntryData(true));
+				pi.appendEntry(CX_STATE_ENTRY, { active: true });
 			}
 			if (decision.kind === "activate") {
 				ctx.ui.notify("CX active.", "info");

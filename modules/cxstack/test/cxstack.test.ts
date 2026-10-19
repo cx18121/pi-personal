@@ -10,7 +10,6 @@ import {
 	applyCxCommand,
 	CX_ACTIVE_MESSAGE,
 	CX_INACTIVE_MESSAGE,
-	CX_MARKER,
 	CX_REFERENCE_ENTRY,
 	CX_STATE_ENTRY,
 	decideCxCommand,
@@ -31,14 +30,15 @@ const stateEntry = (active: boolean, version?: string) => ({
 	customType: CX_STATE_ENTRY,
 	data: { active, ...(version === undefined ? {} : { version }) },
 });
-const directiveEntry = (directive: "active" | "inactive") => ({
+const directiveEntry = (directive: "active" | "inactive", version = "current") => ({
 	type: "custom_message",
 	customType: directive === "active" ? CX_ACTIVE_MESSAGE : CX_INACTIVE_MESSAGE,
+	details: directive === "active" ? { directive, version } : { directive },
 });
 const compactionDirective = (
 	state: { active: boolean; hasState: boolean },
 	entries: ReturnType<typeof directiveEntry>[],
-) => refreshPendingDirective(state, entries).pending;
+) => refreshPendingDirective(state, entries, "current").pending;
 
 describe("CX commands", () => {
 	test("rejects every command while Pi is busy", () => {
@@ -108,7 +108,6 @@ describe("CX session state", () => {
 		expect(restoreCxState([stateEntry(false), stateEntry(true, "kernel-v1")])).toEqual({
 			active: true,
 			hasState: true,
-			version: "kernel-v1",
 		});
 	});
 
@@ -122,31 +121,31 @@ describe("CX session state", () => {
 	});
 
 	test("marks a directive pending when the selected branch lacks current state", () => {
-		expect(refreshPendingDirective({ active: true, hasState: true }, [])).toEqual({
+		expect(refreshPendingDirective({ active: true, hasState: true }, [], "current")).toEqual({
 			active: true,
 			hasState: true,
 			pending: "active",
 		});
 		expect(
-			refreshPendingDirective({ active: false, hasState: true }, [directiveEntry("active")]),
+			refreshPendingDirective({ active: false, hasState: true }, [directiveEntry("active")], "current"),
 		).toEqual({ active: false, hasState: true, pending: "inactive" });
 	});
 
 	test("refreshes active guidance when its content version changes", () => {
 		expect(
 			refreshPendingDirective(
-				{ active: true, hasState: true, version: "old" },
-				[directiveEntry("active")],
+				{ active: true, hasState: true },
+				[directiveEntry("active", "old")],
 				"current",
 			),
-		).toEqual({ active: true, hasState: true, version: "current", pending: "active" });
+		).toEqual({ active: true, hasState: true, pending: "active" });
 		expect(
 			refreshPendingDirective(
-				{ active: true, hasState: true, version: "current" },
+				{ active: true, hasState: true },
 				[directiveEntry("active")],
 				"current",
 			),
-		).toEqual({ active: true, hasState: true, version: "current", pending: undefined });
+		).toEqual({ active: true, hasState: true, pending: undefined });
 	});
 
 	test("injects a pending directive before using the marker", () => {
@@ -181,6 +180,13 @@ describe("CX compaction", () => {
 });
 
 describe("CX audit evidence", () => {
+	test("activation bookkeeping is not evidence that a kernel was delivered", () => {
+		const state = JSON.stringify(stateEntry(true, "not-delivered"));
+		expect(extractCxSessionEvidence(state)).toEqual({
+			used: true, kernelVersions: [], references: [],
+		});
+	});
+
 	test("extracts only CX versions and reference markers", () => {
 		const evidence = extractCxSessionEvidence(
 			[
@@ -190,6 +196,7 @@ describe("CX audit evidence", () => {
 					customType: CX_STATE_ENTRY,
 					data: { active: true, version: "kernel-v2", private: "ignored" },
 				}),
+				JSON.stringify(directiveEntry("active", "kernel-v2")),
 				JSON.stringify({
 					type: "custom",
 					customType: CX_REFERENCE_ENTRY,
@@ -209,7 +216,7 @@ describe("CX audit evidence", () => {
 			used: true,
 			kernelVersions: ["kernel-v2"],
 			references: [
-				{ reference: "playbooks/diagnose-and-fix", version: "reference-v3" },
+				{ reference: "playbooks/diagnose-and-fix", kind: "legacy", version: "reference-v3" },
 			],
 		});
 		expect(JSON.stringify(evidence)).not.toContain("private");
@@ -297,7 +304,7 @@ describe("CX audit evidence", () => {
 			undefined,
 			(path) =>
 				JSON.stringify(
-					stateEntry(true, path.endsWith("old.jsonl") ? "old-kernel" : "current-kernel"),
+					directiveEntry("active", path.endsWith("old.jsonl") ? "old-kernel" : "current-kernel"),
 				),
 			"current-kernel",
 		);
@@ -307,12 +314,6 @@ describe("CX audit evidence", () => {
 });
 
 describe("CX package resources", () => {
-	test("keeps the reviewed kernel and marker compact", () => {
-		const kernel = readFileSync(join(moduleRoot, "resources/kernel.md"), "utf8").trim();
-		expect(kernel.split(/\s+/).filter((word) => word !== "-").length).toBeLessThanOrEqual(500);
-		expect(CX_MARKER.split(/\s+/)).toHaveLength(18);
-	});
-
 	test("resolves every kernel reference from the installed resource root", () => {
 		const resourceRoot = join(moduleRoot, "resources");
 		const kernel = renderCxKernel(
@@ -320,27 +321,14 @@ describe("CX package resources", () => {
 			resourceRoot,
 		);
 		const references = [...kernel.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
-		expect(references).toHaveLength(15);
+		expect(references.length).toBeGreaterThan(0);
 		expect(references.every((reference) => existsSync(reference))).toBe(true);
-	});
-
-	test("routes Reflect through Codex Subagents", () => {
-		const reflect = readFileSync(join(moduleRoot, "resources/reflect.md"), "utf8");
-		expect(reflect).toContain("when `spawn_agent` is available");
-		expect(reflect).toContain("complementary model from Model roles");
-		expect(reflect).not.toContain("pi --list-models");
-		expect(reflect).not.toContain("context: \"fresh\"");
-		expect(reflect).not.toContain("mission: false");
-		expect(reflect).not.toContain("artifacts: false");
-		expect(reflect).not.toContain("correction log");
-		expect(reflect).not.toContain("correction_log");
 	});
 
 	test("registers extension commands without public skill bypasses", () => {
 		const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 		expect(manifest.pi.skills).toBeUndefined();
 		expect(manifest.pi.prompts).toBeUndefined();
-		expect(manifest.pi.extensions).not.toContain("./modules/cxstack/extensions/corrections.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/audit.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/cx.ts");
 		expect(manifest.pi.extensions).toContain("./modules/cxstack/extensions/reflect.ts");

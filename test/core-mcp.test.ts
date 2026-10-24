@@ -1,14 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, McpServerConfig } from "@earendil-works/pi-coding-agent";
 import { getMcpToolExposure, validateMcpServerConfig } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/mcp-servers.js";
 import registerMcp from "../extensions/core-mcp.ts";
 
-function registrations() {
-	const servers = new Map<string, McpServerConfig>();
-	registerMcp({ registerMcpServer: (name, config) => servers.set(name, config) } as ExtensionAPI);
-	return servers;
+function registrations(pencilInstalled = true) {
+	const executableExists = spyOn(fs, "existsSync").mockReturnValue(pencilInstalled);
+	try {
+		const servers = new Map<string, McpServerConfig>();
+		registerMcp({ registerMcpServer: (name, config) => servers.set(name, config) } as ExtensionAPI);
+		return servers;
+	} finally {
+		executableExists.mockRestore();
+	}
 }
 
 describe("native MCP configuration", () => {
@@ -21,6 +27,12 @@ describe("native MCP configuration", () => {
 			expect(validateMcpServerConfig(name, config)).not.toBeString();
 			expect(config.exposure).toBe(name === "exa" ? "hidden" : "deferred");
 		}
+	});
+
+	test("skips Pencil when its desktop server is not installed", () => {
+		expect([...registrations(false).keys()]).toEqual([
+			"linear", "exa", "betterstack", "ecotone", "clickhouse", "context7", "slack",
+		]);
 	});
 
 	test("hides every previously excluded mutation and keeps reads discoverable", () => {

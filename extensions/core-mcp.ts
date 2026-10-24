@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -130,6 +131,7 @@ export default function (pi: ExtensionAPI) {
 	} satisfies Record<string, Parameters<ExtensionAPI["registerMcpServer"]>[1]>;
 
 	for (const [name, config] of Object.entries(servers)) {
+		if (name === "pencil" && !existsSync(servers.pencil.command)) continue;
 		pi.registerMcpServer(name, config);
 	}
 }

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -63,6 +63,9 @@ test("maintenance runs explicit upgrades then checks; bootstrap contains no exte
   const bin = join(h.home, "bin");
   mkdirSync(bin);
   const log = join(h.home, "commands");
+  mkdirSync(join(h.home, ".pi/agent/extensions"), { recursive: true });
+  symlinkSync(join(root, "modules/cxstack/AGENTS.md"), join(h.home, ".pi/agent/AGENTS.md"));
+  symlinkSync(join(root, "config/processes.json"), join(h.home, ".pi/agent/extensions/processes.json"));
   for (const command of ["pi", "npm"]) writeFileSync(join(bin, command), `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.99.1; exit 0; fi\nprintf '%s\\n' '${command} '"$*" >> "$COMMAND_LOG"\n`, { mode: 0o755 });
   const result = spawnSync("bash", ["scripts/update", "macos"], {
     cwd: root, env: { ...process.env, HOME: h.home, PATH: `${bin}:${process.env.PATH}`, COMMAND_LOG: log }, encoding: "utf8",

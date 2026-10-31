@@ -162,3 +162,32 @@ describe("automatic child guard", () => {
     expect(options.sections.model_policy).toBe(prompt);
   });
 });
+
+test("provider probe warns once per failing provider and skips recent results", async () => {
+  const { checkProviders } = await import("../extensions/model-policy.ts");
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const cache = join(mkdtempSync(join(tmpdir(), "provider-check-")), "check.json");
+  const model = (provider: string, id: string, input: number) => ({ provider, id, cost: { input } });
+  const warnings: string[] = [];
+  const probed: string[] = [];
+  const ctx = {
+    scopedModels: [model("anthropic", "opus", 15), model("anthropic", "sonnet", 3), model("openai-codex", "sol", 2), model("off", "x", 1)].map((m) => ({ model: m })),
+    modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test" }) },
+    ui: { notify: (message: string) => warnings.push(message) },
+  };
+  const request = async (m: { provider: string; id: string }) => {
+    probed.push(`${m.provider}/${m.id}`);
+    return m.provider === "anthropic" ? { stopReason: "error", errorMessage: "401 invalid key" } : { stopReason: "stop" };
+  };
+  await checkProviders(ctx as never, { disabledProviders: ["off"] }, cache, request as never);
+  expect(probed.sort()).toEqual(["anthropic/sonnet", "openai-codex/sol"]);
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0]).toContain("anthropic");
+  expect(JSON.parse(readFileSync(cache, "utf8"))["openai-codex"].ok).toBe(true);
+  probed.length = 0;
+  await checkProviders(ctx as never, { disabledProviders: ["off"] }, cache, request as never);
+  expect(probed).toEqual([]);
+  expect(warnings).toHaveLength(1);
+});

@@ -7,8 +7,7 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import registerMemory from "../src/index.ts";
 import registerPersonalMemory from "../../../extensions/memory.ts";
 import registerModelPolicy from "../../../extensions/model-policy.ts";
-import registerCx from "../../../modules/cxstack/extensions/cx.ts";
-import { CX_MARKER } from "../../../modules/cxstack/lib/cx.ts";
+import registerAutonomy from "../../../modules/cxstack/extensions/autonomy.ts";
 import { archiveRecord, ledgerPath, readLedger, saveRecord, recordHash } from "../src/ledger.ts";
 import { SessionEvidence, SOURCE_ENTRY, conversationalEntry } from "../src/learning.ts";
 import { MemorySession } from "../src/runtime.ts";
@@ -45,11 +44,14 @@ async function harness(extra: (pi: ExtensionAPI) => void = () => {}, existingRoo
   const created = await createAgentSession({ cwd, agentDir, modelRuntime: runtime, model, scopedModels: [{ model }], noTools: "builtin", resourceLoader: loader, sessionManager: manager });
   return { ...created, faux, cwd, manager, locations: resolveLocations(cwd), root };
 }
-const sourceId = (context: unknown) => JSON.stringify(context).match(/Current observed submission reference: ([^ .]+:[a-zA-Z0-9-]+)/)![1];
+const sourceId = (manager: SessionManager) => {
+  const entry = [...manager.getBranch()].reverse().find(item => item.type === "custom" && item.customType === "memory-source-v2" && (item.data as { type?: string }).type === "input")!;
+  return `${manager.getSessionId()}:${entry.id}`;
+};
 const call = (name: string, args: Record<string, unknown>) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
 
 // Provider calls here are deliberately scripted plumbing tests, not recognition evidence.
-test("actual Pi payloads contain complete topics, not bodies/scratchpads; fresh recall replaces rather than accumulates", async () => {
+test("actual Pi payloads contain complete topics, not bodies/scratchpads; the inventory is a per-session snapshot that other sessions' writes do not disturb", async () => {
   const h = await harness();
   const global = saveRecord(h.locations.globalDir, input("Standing default v1", true));
   const detail = saveRecord(h.locations.projectDir!, input("hidden-detail-token " + "detail ".repeat(2000)));
@@ -65,12 +67,15 @@ test("actual Pi payloads contain complete topics, not bodies/scratchpads; fresh 
     await h.session.prompt("Write the status report.");
     expect(snapshots[0]).toContain("Standing default v1"); expect(snapshots[0]).toContain('writing');
     expect(snapshots[0]).not.toContain("hidden-detail-token"); expect(snapshots[0]).not.toContain("scratch-only-token"); expect(snapshots[0]).not.toContain("other-project-only-token");
-    expect(snapshots[1]).toContain("Standing default v2"); expect(snapshots[1]).not.toContain("Standing default v1"); expect(snapshots[1]).toContain(detail.record.content);
+    expect(snapshots[1]).toContain("Standing default v1"); expect(snapshots[1]).not.toContain("Standing default v2"); expect(snapshots[1]).toContain(detail.record.content);
     expect(h.faux.state.callCount).toBe(2); expect(JSON.stringify(h.manager.getBranch())).not.toContain("# Local memory");
     const latest = readLedger(h.locations.globalDir).records[0]; archiveRecord(h.locations.globalDir, latest.id, recordHash(latest));
-    await h.session.prompt("Continue."); expect(snapshots[2]).not.toContain("Standing default v2");
+    await h.session.prompt("Continue."); expect(snapshots[2]).toContain("Standing default v1");
     expect(h.session.messages.filter(message => message.role === "user")).toHaveLength(2);
   } finally { h.session.dispose(); }
+  const later = await harness(() => {}, h.root); let fresh = "";
+  later.faux.setResponses([context => { fresh = JSON.stringify(context.messages); return fauxAssistantMessage("Fresh session."); }]);
+  try { await later.session.prompt("Start."); expect(fresh).not.toContain("Standing default"); } finally { later.session.dispose(); }
 });
 
 test("actual Pi continuation admits memory tools and inventory in the reported long-session scenario", async () => {
@@ -122,10 +127,10 @@ test("request inventory explicitly distinguishes empty scopes from unavailable c
   } finally { h.session.dispose(); }
 });
 
-test("packaged prompt contributors preserve memory across continuation and the CX marker turn", async () => {
+test("packaged prompt contributors preserve memory across continuation turns", async () => {
   const h = await harness(pi => {
     registerModelPolicy(pi, () => ({ disabledProviders: [] }));
-    registerCx(pi);
+    registerAutonomy(pi, path.join(os.tmpdir(), `autonomy-${process.pid}.json`), () => ({ key: "example/repo", label: "example/repo", defaultBranch: "main" }));
   });
   const marker = "COMBINED_LOADOUT_STANDING_PREFERENCE";
   saveRecord(h.locations.globalDir, input(marker, true));
@@ -150,9 +155,8 @@ test("packaged prompt contributors preserve memory across continuation and the C
       expect(snapshot).toContain("expert coding assistant");
       expect(snapshot).toContain('"rules"');
       expect(snapshot).toContain('"model_policy"');
+      expect(snapshot).toContain("Autonomy for example/repo: ask.");
     }
-    expect(snapshots[2]).toContain(CX_MARKER);
-    expect(snapshots[2]).toContain('"cx_marker"');
     expect(JSON.stringify(h.manager.getBranch())).not.toContain("# Local memory");
     expect(h.faux.state.callCount).toBe(3);
   } finally { h.session.dispose(); }
@@ -194,12 +198,27 @@ test("real nested delivery retains paired questions/options/preview but only com
   } finally { h.session.dispose(); }
 });
 
+test("the injected memory section stays byte-stable across submissions so the prompt cache holds", async () => {
+  const h = await harness(); const systems: string[] = [];
+  const system = (context: { messages: unknown[] }) => JSON.stringify(context.messages.filter(message => (message as { role?: string }).role === "system"));
+  h.faux.setResponses([context => { systems.push(system(context)); return fauxAssistantMessage("One."); },
+    context => { systems.push(system(context)); return fauxAssistantMessage("Two."); },
+    () => call("memory_write", { scope: "global", topic: "snapshot-topic", route: "Style", content: "Prefer tables.", kind: "preference", quote: "I prefer tables." }),
+    context => { systems.push(system(context)); return fauxAssistantMessage("Saved."); }]);
+  try {
+    await h.session.prompt("First request."); await h.session.prompt("Second request.");
+    expect(systems).toHaveLength(2); expect(systems[0]).toContain("# Local memory"); expect(systems[1]).toBe(systems[0]);
+    await h.session.prompt("I prefer tables.");
+    expect(systems[2]).toContain("snapshot-topic");
+  } finally { h.session.dispose(); }
+});
+
 test("working tool loop saves directly with provenance, no forced reread, and rejects fabricated quotes", async () => {
   const h = await harness(); let id = "";
   h.faux.setResponses([
-    context => { id = sourceId(context); return call("memory_write", { scope: "global", topic: "writing", route: "Output style", content: "Prefer concise explanations.", kind: "preference", evidenceId: id, quote: "I prefer concise explanations.", always: true }); },
+    () => call("memory_write", { scope: "global", topic: "writing", route: "Output style", content: "Prefer concise explanations.", kind: "preference", quote: "I prefer concise explanations.", always: true }),
     fauxAssistantMessage("Saved."),
-    context => { id = sourceId(context); return call("memory_write", { scope: "global", topic: "writing", route: "Output style", content: "Prefer exhaustive explanations.", kind: "preference", evidenceId: id, quote: "Invented preference", always: true }); },
+    () => { id = sourceId(h.manager); return call("memory_write", { scope: "global", topic: "writing", route: "Output style", content: "Prefer exhaustive explanations.", kind: "preference", evidenceId: id, quote: "Invented preference", always: true }); },
     fauxAssistantMessage("Rejected."),
   ]);
   try {
@@ -219,7 +238,7 @@ test("working tool loop saves directly with provenance, no forced reread, and re
 test("one-off task targeting preserves source origin and does not overwrite launch memory or change focus", async () => {
   const h = await harness(), target = path.join(h.root, "task-repo"); fs.mkdirSync(target); Bun.spawnSync(["git", "init", "-q"], { cwd: target }); let id = "";
   h.faux.setResponses([
-    context => { id = sourceId(context); return call("memory_write", { projectPath: target, scope: "project", topic: "reporting", route: "Comparison baseline", content: "Compare against the last sent report.", kind: "decision", evidenceId: id, quote: "Compare against the last sent report." }); },
+    () => { id = sourceId(h.manager); return call("memory_write", { projectPath: target, scope: "project", topic: "reporting", route: "Comparison baseline", content: "Compare against the last sent report.", kind: "decision", evidenceId: id, quote: "Compare against the last sent report." }); },
     () => call("memory_status", {}), fauxAssistantMessage("Saved for the task repository."),
   ]);
   try {
@@ -233,7 +252,7 @@ test("one-off task targeting preserves source origin and does not overwrite laun
 
 test("later sessions recall self-contained records without opening old files or authorizing historical saves", async () => {
   const h = await harness(); let id = "";
-  h.faux.setResponses([context => { id = sourceId(context); return call("memory_write", { scope: "project", topic: "reports", route: "Recipient baseline", content: "Same audience uses the last actually sent report. New audiences use a first-report baseline, to preserve recipient continuity.", kind: "decision", evidenceId: id, quote: "last actually sent report" }); },
+  h.faux.setResponses([() => { id = sourceId(h.manager); return call("memory_write", { scope: "project", topic: "reports", route: "Recipient baseline", content: "Same audience uses the last actually sent report. New audiences use a first-report baseline, to preserve recipient continuity.", kind: "decision", evidenceId: id, quote: "last actually sent report" }); },
     fauxAssistantMessage("Saved"), fauxAssistantMessage("Unrelated response")]);
   try { await h.session.prompt("Use the last actually sent report for the same audience; first-report baseline for a new audience, so recipients get continuity."); await h.session.prompt("What is 2+2?"); }
   finally { h.session.dispose(); }
@@ -405,7 +424,7 @@ test("oversized singleton search returns an honest cue without truncating the re
 
 test("global discovery and optional current evidence survive corrupt project storage and malformed focus", async () => {
   const original = await harness(); let evidenceId = "";
-  original.faux.setResponses([context => { evidenceId = sourceId(context); return call("memory_evidence", { evidenceId }); },
+  original.faux.setResponses([() => { evidenceId = sourceId(original.manager); return call("memory_evidence", { evidenceId }); },
     () => call("memory_write", { scope: "global", topic: "writing", route: "Status style", content: "Prefer uniquefocus concise status reports.",
       kind: "preference", evidenceId, quote: "Prefer uniquefocus concise status reports." }), fauxAssistantMessage("Saved.")]);
   try { await original.session.prompt("Prefer uniquefocus concise status reports."); } finally { original.session.dispose(); }
@@ -417,7 +436,7 @@ test("global discovery and optional current evidence survive corrupt project sto
     for (const malformed of [false, true]) {
       if (malformed) later.manager.appendCustomEntry("memory-focus-v1", { path: "relative", projectId: "invalid" });
       let current = "";
-      later.faux.setResponses([context => { current = sourceId(context); return call("memory_search", { query: "uniquefocus" }); },
+      later.faux.setResponses([() => { current = sourceId(later.manager); return call("memory_search", { query: "uniquefocus" }); },
         () => call("memory_evidence", { evidenceId: current }),
         call("memory_read", { scope: "global", id: record.id }), fauxAssistantMessage("Global memory remains usable; project coverage is unavailable.")]);
       const start = later.session.messages.length;
@@ -444,7 +463,7 @@ test("personal registration has no migration command, settlement scheduler or le
     registerCommand: name => { commands.push(name); },
   } as never);
   expect(commands).toEqual([]);
-  expect(events).toEqual(["session_start", "session_tree", "input", "tool_result", "context_with_system"]);
+  expect(events).toEqual(["session_start", "session_tree", "input", "tool_result", "session_start", "session_tree", "session_compact", "tool_result", "context_with_system"]);
   expect(names).toEqual(["memory_focus", "memory_evidence", "memory_write", "memory_read",
     "memory_search", "memory_forget", "memory_restore", "memory_status", "scratchpad"]);
 });
@@ -485,10 +504,10 @@ test("a settled decision can be saved in the ordinary work batch without an insp
   let artifact = "";
   const h = await harness(pi => pi.registerTool({ name: "write_plan", label: "Plan", description: "Fixture work", parameters: Type.Object({ content: Type.String() }),
     async execute(_id, params) { artifact = params.content; return { content: [{ type: "text" as const, text: "Plan written." }], details: {} }; } }));
-  h.faux.setResponses([context => fauxAssistantMessage([
+  h.faux.setResponses([() => fauxAssistantMessage([
     fauxToolCall("write_plan", { content: "Recipient-local weekdays. New audiences get a first-report baseline." }),
     fauxToolCall("memory_write", { scope: "project", topic: "reports", route: "Recurring report planning", content: "Recipient-local weekdays; new audiences get a first-report baseline for continuity.",
-      kind: "decision", evidenceId: sourceId(context), quote: "Recipient-local weekdays; new audiences get a first-report baseline for continuity." }),
+      kind: "decision", evidenceId: sourceId(h.manager), quote: "Recipient-local weekdays; new audiences get a first-report baseline for continuity." }),
   ], { stopReason: "toolUse" }), fauxAssistantMessage("Work and decision saved.")]);
   try {
     await h.session.prompt("Recipient-local weekdays; new audiences get a first-report baseline for continuity. Write the plan.");

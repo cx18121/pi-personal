@@ -1,12 +1,65 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelPolicy } from "../lib/model-policy.js";
+import type { ModelPolicy } from "../lib/model-settings.mjs";
+
+const HEALTHY_RECHECK_MS = 12 * 60 * 60 * 1000;
+const FAILED_RECHECK_MS = 60 * 60 * 1000;
+type CheckCache = Record<string, { ok: boolean; at: number }>;
+
+/**
+ * Child agents fail late when a provider's credentials are missing or invalid:
+ * the parent pays for a spawn and waits for the error. Probe each enabled
+ * provider with one tiny request, at most twice a day while it stays healthy
+ * and at most hourly while it fails, so a failure warns once per hour.
+ */
+export async function checkProviders(
+  ctx: ExtensionContext,
+  policy: ModelPolicy,
+  cacheFile = join(getAgentDir(), "cache", "provider-check.json"),
+  request: typeof completeSimple = completeSimple,
+) {
+  let cache: CheckCache = {};
+  try { cache = JSON.parse(readFileSync(cacheFile, "utf8")); } catch { /* first run */ }
+  const cheapest = new Map<string, ExtensionContext["scopedModels"][number]["model"]>();
+  for (const { model } of ctx.scopedModels) {
+    if (policy.disabledProviders?.includes(model.provider)) continue;
+    const current = cheapest.get(model.provider);
+    if (!current || model.cost.input < current.cost.input) cheapest.set(model.provider, model);
+  }
+  const now = Date.now();
+  await Promise.all([...cheapest].map(async ([provider, model]) => {
+    const last = cache[provider];
+    if (last && now - last.at < (last.ok ? HEALTHY_RECHECK_MS : FAILED_RECHECK_MS)) return;
+    let failure: string | undefined;
+    try {
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok) failure = auth.error;
+      else {
+        const response = await request(auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model, {
+          messages: [{ role: "user", content: [{ type: "text", text: "Reply with ok." }], timestamp: now }],
+        }, { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, signal: AbortSignal.timeout(30_000), reasoning: "low", maxTokens: 200 });
+        if (response.stopReason === "error") failure = response.errorMessage ?? "request failed";
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    cache[provider] = { ok: !failure, at: now };
+    if (failure) ctx.ui.notify(`${provider} is unavailable for agents: ${failure.slice(0, 160)}. Run /login, or remove its models from enabledModels.`, "warning");
+  }));
+  mkdirSync(dirname(cacheFile), { recursive: true });
+  writeFileSync(cacheFile, `${JSON.stringify(cache, null, 2)}\n`);
+}
 
 const entryType = "cx-child-provider";
 const taskKey = (name: string) => name.replace(/^\/+/, "");
 
-export default function (pi: ExtensionAPI, readPolicy = modelPolicy) {
+export default function (pi: ExtensionAPI, readPolicy = modelPolicy, probe: (ctx: ExtensionContext, policy: ModelPolicy) => Promise<void> = checkProviders) {
   const children = new Map<string, string>();
   pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode === "tui") void probe(ctx, readPolicy()).catch(() => { /* a failed probe must not affect startup */ });
     children.clear();
     for (const entry of ctx.sessionManager.getEntries()) {
       if (entry.type !== "custom" || entry.customType !== entryType) continue;

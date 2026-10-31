@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-sol",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-5-5",
   "outputPad": 0,
   "editorPaddingX": 0,
   "hideThinkingBlock": false,
@@ -21,10 +21,10 @@
     "npm:pi-slopchop@0.10.1",
     "../../Projects/personal/rpiv-mono/packages/rpiv-ask-user-question",
     "npm:@aliou/pi-processes",
-    "npm:@ogulcancelik/pi-codex-compaction",
     "npm:@ogulcancelik/pi-session-recall",
     "npm:@ogulcancelik/pi-codex-subagents",
     "../../Projects/personal/herdr-personal/pi-herdr-worktree-jump",
-    "npm:@monotykamary/pi-math@0.5.4"
+    "npm:@monotykamary/pi-math@0.5.4",
+    "npm:pi-agent-browser-native@0.9.6"
   ]
 }

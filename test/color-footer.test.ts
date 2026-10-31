@@ -21,6 +21,9 @@ test("renders active extension modes", async () => {
 		mode: "tui",
 		model: { id: "test-model" },
 		getContextUsage: () => ({ percent: 12 }),
+		sessionManager: {
+			getBranch: () => [{ type: "message", message: { role: "assistant", usage: { input: 1_000, cacheRead: 9_000, cacheWrite: 0 } } }],
+		},
 		ui: {
 			setFooter(factory: typeof footerFactory) {
 				footerFactory = factory;
@@ -40,12 +43,16 @@ test("renders active extension modes", async () => {
 		{
 			getGitBranch: () => "main",
 			getExtensionStatuses: () => new Map([
-				["cx-mode", "CX"],
+				["autonomy", "push"],
 			]),
 			onBranchChange: () => () => {},
 		},
 	);
 	const output = footer?.render(200).join("\n") ?? "";
 
-	expect(output).toContain("CX");
+	expect(output).toContain("autonomy push");
+	expect(output).toContain("cache 90%");
+
+	handlers.get("message_end")?.({ message: { role: "assistant", usage: { input: 40_000, cacheRead: 10_000 } } });
+	expect(footer?.render(200).join("\n")).toContain("cache 20%");
 });

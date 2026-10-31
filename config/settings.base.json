@@ -1,6 +1,7 @@
 {
   "theme": "dark",
-  "defaultTools": ["+codemode"],
+  "defaultTools": ["+tool_search"],
+  "extensions": ["-builtin:codemode"],
   "defaultThinkingLevel": "high",
   "enabledModels": [
     "openai-codex/gpt-6-sol",

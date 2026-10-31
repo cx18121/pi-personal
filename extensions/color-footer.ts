@@ -61,9 +61,38 @@ const thinkingColor = (level: ReturnType<ExtensionAPI["getThinkingLevel"]>) => {
 	}
 };
 
+type Usage = { input?: number; cacheRead?: number; cacheWrite?: number };
+
+// Share of the latest request's prompt served from the provider cache.
+const cacheHitPercent = (usage: Usage | undefined) => {
+	if (!usage) return undefined;
+	const prompt = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+	return prompt > 0 ? Math.round((100 * (usage.cacheRead ?? 0)) / prompt) : undefined;
+};
+
+const latestAssistantUsage = (entries: ReadonlyArray<{ type: string; message?: { role?: string; usage?: Usage } }>) => {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const message = entries[index]?.message;
+		if (entries[index]?.type === "message" && message?.role === "assistant" && message.usage) return message.usage;
+	}
+	return undefined;
+};
+
 export default function (pi: ExtensionAPI) {
 	let repoStats = emptyRepoStats(process.cwd());
+	let cacheHit: number | undefined;
 	let requestRender = () => {};
+
+	pi.on("message_end", (event) => {
+		const message = event.message as { role?: string; usage?: Usage };
+		if (message.role !== "assistant" || !message.usage) return;
+		cacheHit = cacheHitPercent(message.usage);
+		requestRender();
+	});
+	pi.on("session_tree", (_event, ctx) => {
+		cacheHit = cacheHitPercent(latestAssistantUsage(ctx.sessionManager.getBranch() as never));
+		requestRender();
+	});
 
 	const refreshRepoStats = async (cwd: string) => {
 		const [location, status, diff, stashes, untracked] = await Promise.all([
@@ -105,6 +134,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
+		cacheHit = cacheHitPercent(latestAssistantUsage(ctx.sessionManager.getBranch() as never));
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
@@ -134,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 					const thinkingLevel = pi.getThinkingLevel();
 					const thinking = theme.fg(thinkingColor(thinkingLevel), thinkingLevel);
 					const statuses = footerData.getExtensionStatuses();
-					const cxMode = statuses.get("cx-mode");
+					const autonomy = statuses.get("autonomy");
 					const fastMode = statuses.get("fast-mode");
 					const context = ctx.getContextUsage();
 					const contextPercent = context?.percent;
@@ -149,13 +179,17 @@ export default function (pi: ExtensionAPI) {
 					const filled = roundedContext === undefined ? 0 : Math.max(0, Math.min(10, Math.round(roundedContext / 10)));
 					const contextBar = `${formatContext("█".repeat(filled))}${theme.fg("borderMuted", "█".repeat(10 - filled))}`;
 					const contextLabel = formatContext(roundedContext === undefined ? "?" : `${roundedContext}%`);
+					// Low hit rates on follow-up requests usually mean something rewrote the prompt prefix.
+					const cacheLabel = cacheHit === undefined
+						? ""
+						: theme.fg(cacheHit < 50 ? "error" : cacheHit < 80 ? "warning" : "dim", `cache ${cacheHit}%`);
 					const worktreeDiff = [
 						repoStats.additions > 0 ? theme.fg("success", `+${repoStats.additions}`) : "",
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
 					const status = [
-						[model, thinking, cxMode, fastMode].filter(Boolean).join(" "),
-						`${contextBar} ${contextLabel}`,
+						[model, thinking, fastMode, autonomy ? theme.fg("accent", `autonomy ${autonomy}`) : ""].filter(Boolean).join(" "),
+						[`${contextBar} ${contextLabel}`, cacheLabel].filter(Boolean).join(" "),
 						worktreeDiff,
 					].filter(Boolean).join(separator);
 					const statusLine = truncateToWidth(status, width, theme.fg("dim", "…"));

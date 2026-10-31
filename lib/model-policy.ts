@@ -8,7 +8,7 @@ export const modelPolicy = () => readModelPolicy(join(getAgentDir(), "settings.j
 
 /** A nested call may try only the explicitly configured ordered candidates. */
 export async function completeHelper(
-  task: "answer",
+  task: "answer" | "title",
   ctx: ExtensionContext,
   context: Context,
   signal: AbortSignal,

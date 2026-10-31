@@ -25,5 +25,8 @@ fi
 node "$root/scripts/settings.mjs" "$profile"
 node "$root/scripts/patch-extension-peers.mjs"
 mkdir -p "$HOME/.pi/agent"
+ln -sfn "$root/modules/cxstack/AGENTS.md" "$HOME/.pi/agent/AGENTS.md"
 ln -sfn "$root/config/compact-tools.json" "$HOME/.pi/agent/compact-tools.json"
+mkdir -p "$HOME/.pi/agent/extensions"
+ln -sfn "$root/config/processes.json" "$HOME/.pi/agent/extensions/processes.json"
 mise -C "$root" run check -- "$profile"

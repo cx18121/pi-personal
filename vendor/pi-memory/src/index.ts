@@ -14,8 +14,7 @@ export default function registerMemory(pi: ExtensionAPI) {
     const policy = ["# Local memory", LEARNING_POLICY,
       !autoCaptureEnabled() ? "Autonomous learning disabled. Save only when explicitly requested."
         : "Learn autonomously through the memory tools when lasting knowledge is established. Ordinary questions and one-task exceptions need no memory work.",
-      session.role(ctx) === "subagent" ? "Subagents are read-only." : "",
-      session.currentInput ? `Current observed submission reference: ${session.currentInput}. It is provenance metadata, not an additional request.` : ""].filter(Boolean).join("\n\n");
+      session.role(ctx) === "subagent" ? "Subagents are read-only." : ""].filter(Boolean).join("\n\n");
     const sections: string[] = [];
     const { stores, unavailable } = session.readScopes(ctx);
     for (const { scope, ledger } of stores) {
@@ -27,12 +26,21 @@ export default function registerMemory(pi: ExtensionAPI) {
     if (tokenEstimate(complete) <= responseBudget(ctx)) return complete;
     return `${policy}\n\nMemory inventory/standing preferences could not be admitted in the available context. Coverage is incomplete; use memory_read with complete-unit continuation after making context space. No record or preference was truncated or silently sampled.`;
   }
+  // This section is rewritten into the leading system message on every request, so any
+  // change misses the prompt cache. Snapshot it per session: refresh after this session's
+  // own memory changes, compaction, or a session switch. Other sessions' writes appear then.
+  let snapshot: string | undefined;
+  const refresh = () => { snapshot = undefined; };
+  pi.on("session_start", refresh); pi.on("session_tree", refresh); pi.on("session_compact", refresh);
+  pi.on("tool_result", event => {
+    if (!event.isError && ["memory_write", "memory_forget", "memory_restore", "memory_focus"].includes(event.toolName)) refresh();
+  });
   pi.on("context_with_system", (event, ctx) => {
     let installed = false;
     return { messages: event.messages.map(message => {
       if (message.role !== "system") return message;
       const sections = { ...message.sections }; delete sections.memory;
-      if (!installed) { sections.memory = memoryContext(ctx); installed = true; }
+      if (!installed) { sections.memory = snapshot ??= memoryContext(ctx); installed = true; }
       return { ...message, sections };
     }) };
   });

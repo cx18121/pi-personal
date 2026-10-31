@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-sol",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-5-5",
   "outputPad": 1,
   "editorPaddingX": 1,
   "packages": [
@@ -18,7 +18,6 @@
     "npm:pi-slopchop@0.10.1",
     "npm:@juicesharp/rpiv-ask-user-question@2.8.0",
     "npm:@aliou/pi-processes",
-    "npm:@ogulcancelik/pi-codex-compaction",
     "npm:@ogulcancelik/pi-session-recall",
     "npm:@ogulcancelik/pi-codex-subagents",
     "../../Projects/personal/herdr-personal/pi-herdr-worktree-jump"

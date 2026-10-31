@@ -78,10 +78,23 @@ const latestAssistantUsage = (entries: ReadonlyArray<{ type: string; message?: {
 	return undefined;
 };
 
+type ProcessInfo = { name: string; status: string };
+const LIVE_PROCESS_STATUSES = new Set(["running", "terminating", "terminate_timeout"]);
+
 export default function (pi: ExtensionAPI) {
 	let repoStats = emptyRepoStats(process.cwd());
 	let cacheHit: number | undefined;
+	let runningProcesses: string[] = [];
 	let requestRender = () => {};
+
+	// pi-processes answers list requests on its event bus. Show only live processes.
+	const refreshProcesses = () => {
+		let processes: ProcessInfo[] = [];
+		pi.events.emit("processes:request:list", { reply: (result: ProcessInfo[]) => { processes = result; } });
+		runningProcesses = processes.filter((item) => LIVE_PROCESS_STATUSES.has(item.status)).map((item) => item.name);
+		requestRender();
+	};
+	pi.events.on("processes:changed", refreshProcesses);
 
 	pi.on("message_end", (event) => {
 		const message = event.message as { role?: string; usage?: Usage };
@@ -135,6 +148,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		cacheHit = cacheHitPercent(latestAssistantUsage(ctx.sessionManager.getBranch() as never));
+		refreshProcesses();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
@@ -187,10 +201,13 @@ export default function (pi: ExtensionAPI) {
 						repoStats.additions > 0 ? theme.fg("success", `+${repoStats.additions}`) : "",
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
+					const processes = runningProcesses.length === 0 ? ""
+						: theme.fg("accent", runningProcesses.length === 1 ? `▶ ${runningProcesses[0]}` : `▶ ${runningProcesses.length} processes`);
 					const status = [
 						[model, thinking, fastMode, autonomy ? theme.fg("accent", `autonomy ${autonomy}`) : ""].filter(Boolean).join(" "),
 						[`${contextBar} ${contextLabel}`, cacheLabel].filter(Boolean).join(" "),
 						worktreeDiff,
+						processes,
 					].filter(Boolean).join(separator);
 					const statusLine = truncateToWidth(status, width, theme.fg("dim", "…"));
 					return [locationLine, statusLine];

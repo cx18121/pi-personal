@@ -5,9 +5,15 @@ import colorFooter from "../extensions/color-footer.ts";
 test("renders active extension modes", async () => {
 	const handlers = new Map<string, (...args: any[]) => any>();
 	let footerFactory: ((tui: any, theme: any, data: any) => any) | undefined;
+	const listeners = new Map<string, () => void>();
+	let processes = [{ name: "dev-server", status: "running" }, { name: "old-check", status: "exited" }];
 	const pi = {
 		on(event: string, handler: (...args: any[]) => any) {
 			handlers.set(event, handler);
+		},
+		events: {
+			on: (channel: string, listener: () => void) => listeners.set(channel, listener),
+			emit: (channel: string, payload: any) => { if (channel === "processes:request:list") payload.reply(processes); },
 		},
 		async exec(_command: string, args: string[]) {
 			if (args[0] === "rev-parse") return { code: 0, stdout: "/workspace\n.git\n", stderr: "" };
@@ -55,4 +61,10 @@ test("renders active extension modes", async () => {
 
 	handlers.get("message_end")?.({ message: { role: "assistant", usage: { input: 40_000, cacheRead: 10_000 } } });
 	expect(footer?.render(200).join("\n")).toContain("cache 20%");
+
+	expect(output).toContain("▶ dev-server");
+	expect(output).not.toContain("old-check");
+	processes = [{ name: "old-check", status: "exited" }];
+	listeners.get("processes:changed")!();
+	expect(footer?.render(200).join("\n")).not.toContain("▶");
 });

@@ -18,7 +18,7 @@ if [[ ! -d "$root/node_modules" ]]; then
 fi
 
 node "$root/scripts/settings.mjs" --check "$profile"
-for link in "AGENTS.md:$root/modules/cxstack/AGENTS.md" "extensions/processes.json:$root/config/processes.json"; do
+for link in "AGENTS.md:$root/modules/cxstack/AGENTS.md"; do
   if [[ "$(readlink "$HOME/.pi/agent/${link%%:*}")" != "${link#*:}" ]]; then
     printf '~/.pi/agent/%s is not linked to %s. Run bootstrap.\n' "${link%%:*}" "${link#*:}" >&2
     exit 1

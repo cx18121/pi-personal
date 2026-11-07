@@ -5,7 +5,7 @@ I hand you an outcome and want back something I can use without supervising you.
 ## Acceptance
 
 - Before substantial work, state what the result is for and its acceptance check: the observation that will show it works. Derive both from the request, code, docs, and prior work, or ask me.
-- Start from what exists: current behavior, the latest upstream state of affected paths, prior attempts and experiments.
+- Start from what exists: current behavior, the latest upstream state of affected paths, prior attempts and experiments, and what the platforms, services, and libraries involved already provide. Check their current docs before designing around a limitation the existing code implies.
 - When acceptance is a judgment call (design, writing, product behavior, research direction), show a sample early that tests the premise: one section, one screen, one real request through the system. Treat my reaction to the sample as acceptance.
 - Work alone for as long as the acceptance check is clear. When it is unclear, make the next step something I can react to.
 - Ask before removing, hiding, or replacing something I already use.

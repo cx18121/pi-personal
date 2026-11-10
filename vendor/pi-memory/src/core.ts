@@ -416,6 +416,9 @@ export function mutateText(
   );
 }
 
+// Items are reminders that point elsewhere. Status reports pasted here went stale unread.
+export const SCRATCHPAD_ITEM_LIMIT = 280;
+
 export function scratchpadFilePath(dir: string) {
   return path.join(dir, "SCRATCHPAD.md");
 }
@@ -494,6 +497,12 @@ export function mutateChecklist(options: {
   if (options.action === "list") return readText(options.filePath);
   if (options.action === "add") {
     if (!options.text?.trim()) throw new Error("Text is required for add.");
+    const text = options.text.trim();
+    if (text.includes("\n") || text.length > SCRATCHPAD_ITEM_LIMIT) {
+      throw new Error(
+        `A scratchpad item is one line of at most ${SCRATCHPAD_ITEM_LIMIT} characters. Put the detail in the ticket, handoff or PR and point to it.`,
+      );
+    }
     return mutateText(options.filePath, (existing) =>
       appendChecklistItem(existing, options.text!, options.sessionId),
     );

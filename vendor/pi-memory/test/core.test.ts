@@ -122,6 +122,15 @@ describe("scratchpads", () => {
     expect(readText(archive)).toBe(archived);
   });
 
+  test.each([
+    ["a second line", "Finish PAN-1\nDetails: slot 3, fixtures"],
+    ["a status report", "x".repeat(281)],
+  ])("rejects an item with %s", (_label, text) => {
+    const filePath = scratchpadFilePath(tempDir);
+    expect(() => mutateChecklist({ filePath, action: "add", text })).toThrow("one line of at most 280 characters");
+    expect(readText(filePath)).toBe("");
+  });
+
 });
 
 

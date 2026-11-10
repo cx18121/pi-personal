@@ -195,7 +195,7 @@ export function memoryOperations(session: MemorySession): MemoryOperation[] {
     },
   });
   add({
-    name: "scratchpad", label: "Scratchpad", description: "Unfinished-work checklist. Read explicitly when resuming work. Never injected into durable recall. Subagents are read-only.",
+    name: "scratchpad", label: "Scratchpad", description: "Unfinished-work checklist. Each item is one line of at most 280 characters that points to the ticket, handoff or PR holding the detail. Read explicitly when resuming work. Never injected into durable recall. Subagents are read-only.",
     parameters: Type.Object({ scope: scopeSchema, projectPath: projectPathSchema, action: StringEnum(["add", "done", "undo", "clear_done", "list"] as const), text: Type.Optional(Type.String()) }),
     async execute(_id, params, signal, ctx) {
       try { signal?.throwIfAborted(); const state = session.scope(ctx, params.scope, params.projectPath); assertScratchpadPermission(state.role, params.action);

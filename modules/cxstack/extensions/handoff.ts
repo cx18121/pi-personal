@@ -94,4 +94,10 @@ export default function (pi: ExtensionAPI, handoffDir = join(getAgentDir(), "han
 			});
 		},
 	});
+
+	// A compaction means the session has run long. Remind Charlie once per compaction; nothing enters the context.
+	pi.on("session_compact", (_event, ctx) => {
+		if (ctx.mode !== "tui") return;
+		ctx.ui.notify("This session has compacted. If the goal is done or has changed, consider /handoff.", "info");
+	});
 }

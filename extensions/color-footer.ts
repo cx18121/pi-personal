@@ -78,20 +78,42 @@ const latestAssistantUsage = (entries: ReadonlyArray<{ type: string; message?: {
 	return undefined;
 };
 
-type ProcessInfo = { name: string; status: string };
+type ProcessInfo = { name: string; status: string; startTime?: number };
 const LIVE_PROCESS_STATUSES = new Set(["running", "terminating", "terminate_timeout"]);
+
+export const formatElapsed = (milliseconds: number) => {
+	const minutes = Math.floor(milliseconds / 60_000);
+	if (minutes < 1) return `${Math.max(0, Math.floor(milliseconds / 1000))}s`;
+	return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+
+/** Running processes with how long each has run: one by name, several as a count with the longest. */
+export const formatProcesses = (processes: ProcessInfo[], now: number) => {
+	if (processes.length === 0) return "";
+	const elapsed = (item: ProcessInfo) => (item.startTime === undefined ? "" : ` ${formatElapsed(now - item.startTime)}`);
+	if (processes.length === 1) return `▶ ${processes[0]!.name}${elapsed(processes[0]!)} · /ps`;
+	const oldest = processes.reduce((first, item) => ((item.startTime ?? now) < (first.startTime ?? now) ? item : first));
+	return `▶ ${processes.length} processes, longest ${oldest.name}${elapsed(oldest)} · /ps`;
+};
 
 export default function (pi: ExtensionAPI) {
 	let repoStats = emptyRepoStats(process.cwd());
 	let cacheHit: number | undefined;
-	let runningProcesses: string[] = [];
+	let runningProcesses: ProcessInfo[] = [];
 	let requestRender = () => {};
+	let elapsedTicker: ReturnType<typeof setInterval> | undefined;
 
 	// pi-processes answers list requests on its event bus. Show only live processes.
 	const refreshProcesses = () => {
 		let processes: ProcessInfo[] = [];
 		pi.events.emit("processes:request:list", { reply: (result: ProcessInfo[]) => { processes = result; } });
-		runningProcesses = processes.filter((item) => LIVE_PROCESS_STATUSES.has(item.status)).map((item) => item.name);
+		runningProcesses = processes.filter((item) => LIVE_PROCESS_STATUSES.has(item.status));
+		// Keep elapsed times current while anything runs.
+		if (runningProcesses.length > 0 && elapsedTicker === undefined) elapsedTicker = setInterval(() => requestRender(), 15_000);
+		if (runningProcesses.length === 0 && elapsedTicker !== undefined) {
+			clearInterval(elapsedTicker);
+			elapsedTicker = undefined;
+		}
 		requestRender();
 	};
 	pi.events.on("processes:changed", refreshProcesses);
@@ -157,7 +179,11 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			return {
-				dispose: unsubscribe,
+				dispose: () => {
+					unsubscribe();
+					if (elapsedTicker !== undefined) clearInterval(elapsedTicker);
+					elapsedTicker = undefined;
+				},
 				invalidate() {},
 				render(width: number) {
 					const separator = theme.fg("dim", "  ·  ");
@@ -201,8 +227,7 @@ export default function (pi: ExtensionAPI) {
 						repoStats.additions > 0 ? theme.fg("success", `+${repoStats.additions}`) : "",
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
-					const processes = runningProcesses.length === 0 ? ""
-						: theme.fg("accent", runningProcesses.length === 1 ? `▶ ${runningProcesses[0]}` : `▶ ${runningProcesses.length} processes`);
+					const processes = runningProcesses.length === 0 ? "" : theme.fg("accent", formatProcesses(runningProcesses, Date.now()));
 					const status = [
 						[model, thinking, fastMode, autonomy ? theme.fg("accent", `autonomy ${autonomy}`) : ""].filter(Boolean).join(" "),
 						[`${contextBar} ${contextLabel}`, cacheLabel].filter(Boolean).join(" "),

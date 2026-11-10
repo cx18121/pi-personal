@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import colorFooter from "../extensions/color-footer.ts";
+import colorFooter, { formatProcesses } from "../extensions/color-footer.ts";
 
 test("renders active extension modes", async () => {
 	const handlers = new Map<string, (...args: any[]) => any>();
@@ -62,9 +62,18 @@ test("renders active extension modes", async () => {
 	handlers.get("message_end")?.({ message: { role: "assistant", usage: { input: 40_000, cacheRead: 10_000 } } });
 	expect(footer?.render(200).join("\n")).toContain("cache 20%");
 
-	expect(output).toContain("▶ dev-server");
+	expect(output).toContain("▶ dev-server · /ps");
 	expect(output).not.toContain("old-check");
 	processes = [{ name: "old-check", status: "exited" }];
 	listeners.get("processes:changed")!();
 	expect(footer?.render(200).join("\n")).not.toContain("▶");
+});
+
+test("shows how long running processes have run", () => {
+	const now = Date.parse("2026-11-10T12:00:00Z");
+	expect(formatProcesses([{ name: "tests", status: "running", startTime: now - 3 * 60_000 }], now)).toBe("▶ tests 3m · /ps");
+	expect(formatProcesses([
+		{ name: "server", status: "running", startTime: now - 75 * 60_000 },
+		{ name: "tests", status: "running", startTime: now - 40_000 },
+	], now)).toBe("▶ 2 processes, longest server 1h 15m · /ps");
 });

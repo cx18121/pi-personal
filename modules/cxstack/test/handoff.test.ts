@@ -12,6 +12,7 @@ function harness(writes: boolean) {
 	const result: { editor?: string; parent?: string; notices: string[] } = { notices: [] };
 	const pi = {
 		registerCommand: (_name: string, spec: any) => { command = spec; },
+		on() {},
 		exec: async (cmd: string, args: string[]) => cmd === "git" && args[0] === "branch" ? { code: 0, stdout: "fix/x\n" }
 			: cmd === "git" && args[0] === "status" ? { code: 0, stdout: " M a.ts\n" } : { code: 1, stdout: "" },
 		sendUserMessage: (text: string) => {

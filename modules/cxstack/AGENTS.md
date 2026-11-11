@@ -14,6 +14,7 @@ I hand you an outcome and want back something I can use without supervising you.
 
 - Before extra work, name the decisive check: the observation that would change your judgment or next step. Run it first, and spend effort only where a result could change the decision.
 - Prove one tracer bullet end to end before scaling.
+- Fix at the cause. When anything comes out wrong, whether code, data, docs or agent output, trace it to the source that produced it and change that source. When feedback corrects output that a skill, AGENTS.md or doc guided, that wording is the source. A compensating layer, such as a fallback, special case, extra instruction or memory record, needs a stated reason the source cannot change.
 - Size the change to evidenced risk: each safeguard, state, abstraction, and test answers a risk you can point to. One test per distinct risk.
 - Run commands that finish within about a minute directly in bash. Use the process tool for servers, watchers, and longer jobs.
 - Reuse a green check until its inputs change. After an unchanged command fails, inspect the command and directory, then change method or report the blocker.

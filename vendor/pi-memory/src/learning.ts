@@ -134,9 +134,15 @@ export class SessionEvidence {
       projectedContext: manager.buildSessionProjection().entries.filter(entry => context.some(raw => raw.id === entry.sourceEntry.id)),
       earlierContext: branch.slice(0, branch.length - context.length).map(entry => ({ id: entry.id, type: entry.type, timestamp: entry.timestamp })) });
   }
+  /** The newest requester source on the current branch that contains the exact quote.
+   * Corrections are often saved a few turns after they were said. */
+  resolveQuote(manager: ReadonlySessionManager, quote: string): string | undefined {
+    if (!quote.trim()) return undefined;
+    return this.list(manager).findLast(source => source.actor === "user" && source.text.includes(quote))?.id;
+  }
   evidence(manager: ReadonlySessionManager, id: string, quote: string, kind: Exclude<MemoryKind, "legacy">, fromEntryId?: string): Evidence {
     const { source, citation } = this.inspect(manager, id, { fromEntryId });
-    if (!quote.trim() || !source.text.includes(quote)) throw new Error("Quote must occur in the observed source, not its interpretive context.");
+    if (!quote.trim() || !source.text.includes(quote)) throw new Error(`Quote is not an exact substring of evidence ${id}. Copy one contiguous span verbatim from a single source, without stitching, trimming or tool wrapper text.`);
     if (kind !== "fact" && source.actor !== "user") throw new Error("Preferences and settled decisions require requester evidence.");
     return { actor: source.actor, reference: source.id, quote, observedAt: source.observedAt, source: citation };
   }

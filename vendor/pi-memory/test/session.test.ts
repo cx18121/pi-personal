@@ -557,3 +557,23 @@ test("optional current readers keep their span and unitization across continuati
     expect(offBranch.isError).toBe(true);
   } finally { h.session.dispose(); }
 });
+
+test("an omitted evidenceId cites the earlier user message that contains the quote, not only the latest one", async () => {
+  const h = await harness(); let earlier = "";
+  const write = (quote: string) => call("memory_write", { scope: "global", topic: "judging", route: "Assessing built output", content: "Judge output by the experience it gives.", kind: "preference", quote });
+  h.faux.setResponses([
+    () => { earlier = sourceId(h.manager); return fauxAssistantMessage("Noted."); },
+    () => write("this is terrible"), () => fauxAssistantMessage("Saved."),
+    () => write("this is not good ... terrible"), () => fauxAssistantMessage("Failed."),
+  ]);
+  try {
+    await h.session.prompt("The withdrawal card is huge. this is not good btw, this is terrible");
+    await h.session.prompt("yeah go");
+    const saved = readLedger(h.locations.globalDir).records[0];
+    expect(saved.evidence.reference).toBe(earlier); expect(saved.evidence.quote).toBe("this is terrible");
+    await h.session.prompt("ok");
+    const failed = h.session.messages.filter(message => message.role === "toolResult").at(-1)!;
+    expect(failed.isError || JSON.stringify(failed.content).includes("Memory error")).toBe(true);
+    expect(JSON.stringify(failed.content)).toContain("No user message or questionnaire answer on this branch contains this exact quote");
+  } finally { h.session.dispose(); }
+});

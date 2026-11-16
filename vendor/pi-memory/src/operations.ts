@@ -88,13 +88,13 @@ export function memoryOperations(session: MemorySession): MemoryOperation[] {
     description: "Save/replace one settled, contextual memory directly from an authorized current-session source and exact quote. No prior inspection call required. Understand the relevant exchange; read missing antecedents only when needed. Preserve qualifications and rationale. ID/current hash required for replacement; no historical sources or approval inbox.",
     parameters: Type.Object({ scope: scopeSchema, projectPath: projectPathSchema, topic: Type.String({ description: "Meaningful one-line topic name, reusable for related records." }),
       route: Type.String({ description: "One-line cue explaining when this complete record matters." }), content: Type.String(), kind: StringEnum(["preference", "decision", "fact"] as const),
-      evidenceId: Type.Optional(Type.String({ description: "Defaults to the current user submission. Pass an id from memory_evidence for an earlier one." })), quote: Type.String(), fromEntryId: Type.Optional(Type.String({ description: "Include an earlier current-session antecedent in provenance when needed. May expand, not narrow, the default exchange." })),
+      evidenceId: Type.Optional(Type.String({ description: "Omit to cite the newest user message or questionnaire answer on this branch that contains the exact quote. Pass an id from memory_evidence only for tool-sourced facts or to pin a specific source." })), quote: Type.String(), fromEntryId: Type.Optional(Type.String({ description: "Include an earlier current-session antecedent in provenance when needed. May expand, not narrow, the default exchange." })),
       always: Type.Optional(Type.Boolean()), expiresAt: Type.Optional(Type.String()), id: Type.Optional(Type.String()), expectedHash: Type.Optional(Type.String()) }),
     async execute(_id, params, signal, ctx) {
       try { signal?.throwIfAborted();
         const state = session.scope(ctx, params.scope, params.projectPath); assertMemoryMutationPermission(state.role);
-        const evidenceId = params.evidenceId ?? session.currentInput;
-        if (!evidenceId) throw new Error("No current user submission to cite. Pass an evidenceId from memory_evidence.");
+        const evidenceId = params.evidenceId ?? session.evidence.resolveQuote(ctx.sessionManager, params.quote);
+        if (!evidenceId) throw new Error("No user message or questionnaire answer on this branch contains this exact quote. Copy one contiguous span verbatim from a single message, without stitching, trimming or tool wrapper text.");
         const evidence = session.evidence.evidence(ctx.sessionManager, evidenceId, params.quote, params.kind, params.fromEntryId);
         const { projectPath: _project, scope: _scope, evidenceId: _evidenceId, quote: _quote, fromEntryId: _fromEntry, ...fields } = params;
         const saved = saveRecord(state.dir, { ...fields, always: params.always ?? false, evidence });

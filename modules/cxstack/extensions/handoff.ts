@@ -1,12 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // /handoff asks the current agent, which still holds the full context and a warm
 // prompt cache, to write the handoff to a file. The new session starts from a
 // short pointer to that file, so the agent-written text never enters the new
 // session as Charlie's own message, and memory cannot cite it as his words.
+// Inside Herdr the new session opens in a new tab and the old one keeps running
+// in its own tab. Elsewhere the new session replaces the old one in place.
 
 const template = readFileSync(fileURLToPath(new URL("../resources/handoff.md", import.meta.url)), "utf8");
 const START_TIMEOUT_MS = 60_000;
@@ -47,7 +49,44 @@ const fill = (text: string, values: Record<string, string>) =>
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const pointer = (file: string, session: string | undefined) =>
+	`Continue from the handoff at ${file}. Read it, restate the goal and the next step in two lines, then continue.` +
+	(session ? ` The previous session is ${session}; query it with session_query for details the handoff omits.` : "");
+
+const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** Opens the new session in a focused Herdr tab beside the old one. Returns false outside Herdr. */
+async function openInHerdrTab(exec: Exec, cwd: string, sessionDir: string, session: string, file: string, focus: string) {
+	const workspace = process.env.HERDR_WORKSPACE_ID;
+	if (process.env.HERDR_ENV !== "1" || !workspace) return false;
+	// A header-only session file carries the parent link; pi --session opens it as a new session.
+	const next = SessionManager.create(cwd, sessionDir, { parentSession: session });
+	const nextFile = next.getSessionFile()!;
+	mkdirSync(dirname(nextFile), { recursive: true });
+	writeFileSync(nextFile, `${JSON.stringify(next.getHeader())}\n`, { flag: "wx" });
+	const label = focus ? ["--label", focus.length > 40 ? `${focus.slice(0, 39)}…` : focus] : [];
+	const created = await exec("herdr", ["tab", "create", "--workspace", workspace, "--cwd", cwd, ...label, "--focus"], { cwd, timeout: 10_000 });
+	const pane = created.code === 0 ? JSON.parse(created.stdout).result?.root_pane?.pane_id : undefined;
+	if (!pane) throw new Error(created.stderr.trim() || created.stdout.trim() || "herdr tab create failed");
+	const command = ["pi", "--session", nextFile, "--handoff", file].map(shellQuote).join(" ");
+	const ran = await exec("herdr", ["pane", "run", pane, command], { cwd, timeout: 10_000 });
+	if (ran.code !== 0) throw new Error(ran.stderr.trim() || ran.stdout.trim() || "herdr pane run failed");
+	return true;
+}
+
 export default function (pi: ExtensionAPI, handoffDir = join(getAgentDir(), "handoffs"), pollMs = 250) {
+	pi.registerFlag("handoff", {
+		description: "Start with a pointer to this handoff file in the editor (used by /handoff)",
+		type: "string",
+	});
+
+	pi.on("session_start", (event, ctx) => {
+		const file = pi.getFlag("handoff");
+		if (event.reason !== "startup" || typeof file !== "string" || !file || !ctx.hasUI) return;
+		ctx.ui.setEditorText(pointer(file, ctx.sessionManager.getHeader()?.parentSession));
+		ctx.ui.notify(`Handoff saved to ${file}. Review it if you like, then press Enter.`, "info");
+	});
+
 	pi.registerCommand("handoff", {
 		description: "Continue this work in a fresh session from a written handoff (optional: focus for the next session)",
 		handler: async (args, ctx) => {
@@ -84,11 +123,18 @@ export default function (pi: ExtensionAPI, handoffDir = join(getAgentDir(), "han
 				ctx.ui.notify(`No handoff was saved to ${file}. The session is unchanged.`, "warning");
 				return;
 			}
-			const pointer = `Continue from the handoff at ${file}. Read it, restate the goal and the next step in two lines, then continue. The previous session is ${session}; query it with session_query for details the handoff omits.`;
+			try {
+				if (await openInHerdrTab(pi.exec.bind(pi), ctx.cwd, ctx.sessionManager.getSessionDir(), session, file, focus)) {
+					ctx.ui.notify(`Handoff opened in a new Herdr tab. This session stays here.`, "info");
+					return;
+				}
+			} catch (error) {
+				ctx.ui.notify(`Could not open a Herdr tab (${error instanceof Error ? error.message : error}). Continuing in this tab.`, "warning");
+			}
 			await ctx.newSession({
 				parentSession: session,
 				withSession: async (next) => {
-					next.ui.setEditorText(pointer);
+					next.ui.setEditorText(pointer(file, session));
 					next.ui.notify(`Handoff saved to ${file}. Review it if you like, then press Enter.`, "info");
 				},
 			});

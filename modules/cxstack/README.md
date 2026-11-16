@@ -21,7 +21,7 @@ The setting is keyed by the `origin` remote, so every worktree and clone shares 
 
 ## `/handoff [focus]`
 
-The current agent, which holds the full context and a warm prompt cache, writes a handoff: goal and acceptance check, state, decisions and rejected directions with reasons, open questions, next step, and sources. The command adds repository facts it collects itself (branch, HEAD, upstream, pull request, uncommitted files). The handoff is saved under `~/.pi/agent/handoffs/`, and a new session opens with it in the editor for review. The new session links to the old one and can query it with `session_query`. The Herdr worktree jump accepts the same kind of handoff. After each compaction, a one-line notice suggests `/handoff`; it is shown to me only and adds nothing to the agent's context.
+The current agent, which holds the full context and a warm prompt cache, writes a handoff: goal and acceptance check, state, decisions and rejected directions with reasons, open questions, next step, and sources. The command adds repository facts it collects itself (branch, HEAD, upstream, pull request, uncommitted files). The handoff is saved under `~/.pi/agent/handoffs/`, and a new session opens with a pointer to it in the editor, waiting for Enter. Inside Herdr the new session opens in a new focused tab and the old session keeps running in its own tab. Elsewhere, or if Herdr fails, the new session replaces the old one in place. The new session links to the old one and can query it with `session_query`. The Herdr worktree jump accepts the same kind of handoff. After each compaction, a one-line notice suggests `/handoff`; it is shown to me only and adds nothing to the agent's context.
 
 ## `/audit [days]`
 

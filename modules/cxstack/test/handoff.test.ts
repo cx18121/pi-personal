@@ -1,20 +1,29 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import handoff from "../extensions/handoff.ts";
 
-function harness(writes: boolean) {
+function harness(writes: boolean, herdr?: { workspace: string }) {
 	const dir = mkdtempSync(join(tmpdir(), "handoff-"));
 	let command: any;
 	let sent = "";
 	let running = false;
-	const result: { editor?: string; parent?: string; notices: string[] } = { notices: [] };
+	const result: { editor?: string; parent?: string; notices: string[]; herdr: string[][] } = { notices: [], herdr: [] };
+	process.env.HERDR_ENV = herdr ? "1" : "";
+	process.env.HERDR_WORKSPACE_ID = herdr?.workspace ?? "";
 	const pi = {
 		registerCommand: (_name: string, spec: any) => { command = spec; },
+		registerFlag() {},
 		on() {},
-		exec: async (cmd: string, args: string[]) => cmd === "git" && args[0] === "branch" ? { code: 0, stdout: "fix/x\n" }
-			: cmd === "git" && args[0] === "status" ? { code: 0, stdout: " M a.ts\n" } : { code: 1, stdout: "" },
+		exec: async (cmd: string, args: string[]) => {
+			if (cmd === "herdr") {
+				result.herdr.push(args);
+				return { code: 0, stdout: args[1] === "create" ? JSON.stringify({ result: { root_pane: { pane_id: "w1:p9" } } }) : "", stderr: "" };
+			}
+			return cmd === "git" && args[0] === "branch" ? { code: 0, stdout: "fix/x\n" }
+				: cmd === "git" && args[0] === "status" ? { code: 0, stdout: " M a.ts\n" } : { code: 1, stdout: "" };
+		},
 		sendUserMessage: (text: string) => {
 			sent = text;
 			setTimeout(() => { running = true; }, 5);
@@ -29,7 +38,7 @@ function harness(writes: boolean) {
 		cwd: "/repo",
 		isIdle: () => !running,
 		ui: { notify: (message: string) => result.notices.push(message) },
-		sessionManager: { getSessionFile: () => "/sessions/old.jsonl" },
+		sessionManager: { getSessionFile: () => "/sessions/old.jsonl", getSessionDir: () => join(dir, "sessions") },
 		newSession: async (options: any) => {
 			result.parent = options.parentSession;
 			await options.withSession({ ui: { setEditorText: (text: string) => { result.editor = text; }, notify() {} } });
@@ -56,4 +65,29 @@ test("no session opens when the agent saves no handoff", async () => {
 	await h.run("");
 	expect(h.result.parent).toBeUndefined();
 	expect(h.result.notices.at(-1)).toContain("No handoff was saved");
+});
+
+test("inside Herdr the new session opens in a new tab linked to the old one, and the old session stays", async () => {
+	const h = harness(true, { workspace: "w1" });
+	await h.run("add docs");
+	expect(h.result.parent).toBeUndefined();
+	const [create, run] = h.result.herdr;
+	expect(create).toEqual(["tab", "create", "--workspace", "w1", "--cwd", "/repo", "--label", "add docs", "--focus"]);
+	expect(run!.slice(0, 2)).toEqual(["pane", "run"]);
+	expect(run![2]).toBe("w1:p9");
+	const [, sessionFile, handoffFile] = run![3]!.match(/^'pi' '--session' '([^']+)' '--handoff' '([^']+)'$/)!;
+	expect(JSON.parse(readFileSync(sessionFile!, "utf8")).parentSession).toBe("/sessions/old.jsonl");
+	expect(readFileSync(handoffFile!, "utf8")).toContain("Ship the fix");
+});
+
+test("a Pi started with --handoff waits with the pointer in its editor", () => {
+	let start: any;
+	let editor = "";
+	handoff({ registerCommand() {}, registerFlag() {}, getFlag: () => "/h/x.md", on: (name: string, fn: any) => { if (name === "session_start") start = fn; } } as never);
+	const ctx = { hasUI: true, ui: { setEditorText: (t: string) => { editor = t; }, notify() {} }, sessionManager: { getHeader: () => ({ parentSession: "/sessions/old.jsonl" }) } };
+	start({ reason: "reload" }, ctx);
+	expect(editor).toBe("");
+	start({ reason: "startup" }, ctx);
+	expect(editor).toStartWith("Continue from the handoff at /h/x.md.");
+	expect(editor).toContain("/sessions/old.jsonl");
 });

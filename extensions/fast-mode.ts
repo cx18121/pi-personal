@@ -1,110 +1,141 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createFastCapabilities, isFastTier, record, type FastModel } from "../lib/fast-capabilities.js";
 
-const FAST_MODE_ENTRY = "personal-fast-mode";
-const FAST_MODE_STATUS = "fast-mode";
-const PRIORITY_TIER = "priority";
-const SUPPORTED_MODELS = new Set([
-	"gpt-5.4",
-	"gpt-5.5",
-	"gpt-5.6-luna",
-	"gpt-5.6-sol",
-	"gpt-5.6-terra",
-]);
+const ENTRY = "personal-fast-mode";
+const STATUS = "fast-mode";
+const ARGS = ["on", "off", "status"];
 
-type FastModel = {
-	provider: string;
-	api: string;
-	id: string;
-};
+// Scope opt-in to the provider, transport and model that the user enabled.
+const modelKey = (model: FastModel) => JSON.stringify([model.provider, model.api, model.id, model.baseUrl]);
 
-type FastModeEntry = {
-	type: string;
-	customType?: string;
-	data?: unknown;
-};
+export default function fastMode(pi: ExtensionAPI, capability = createFastCapabilities()) {
+	const enabled = new Set<string>();
+	let last: { key: string; tier?: string; bypassed?: boolean } | undefined;
 
-export const supportsFastMode = (model: FastModel | undefined, usingOAuth: boolean) => {
-	if (!model || !SUPPORTED_MODELS.has(model.id)) return false;
-
-	const openAiApi = model.provider === "openai" && model.api === "openai-responses";
-	const chatGpt = model.provider === "openai-codex" && model.api === "openai-codex-responses" && usingOAuth;
-	return openAiApi || chatGpt;
-};
-
-export const addPriorityTier = (payload: unknown, modelId: string) => {
-	if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
-	if (!("model" in payload) || payload.model !== modelId || "service_tier" in payload) return undefined;
-
-	return { ...payload, service_tier: PRIORITY_TIER };
-};
-
-export const restoreFastMode = (entries: readonly FastModeEntry[]) => {
-	const entry = entries.findLast(
-		(candidate) => candidate.type === "custom" && candidate.customType === FAST_MODE_ENTRY,
-	);
-	if (entry?.type !== "custom" || typeof entry.data !== "object" || entry.data === null || !("enabled" in entry.data)) {
-		return false;
-	}
-
-	return entry.data.enabled === true;
-};
-
-export default function (pi: ExtensionAPI) {
-	const sessionStates = new WeakMap<object, boolean>();
-	const isEnabled = (ctx: ExtensionContext) => sessionStates.get(ctx.sessionManager) === true;
-	const currentModelSupportsFastMode = (ctx: ExtensionContext) => {
-		const { model } = ctx;
-		return model !== undefined && supportsFastMode(model, ctx.modelRegistry.isUsingOAuth(model));
-	};
-	const updateStatus = (ctx: ExtensionContext) => {
+	const optIn = (ctx: ExtensionContext) => ctx.model !== undefined && enabled.has(modelKey(ctx.model));
+	const getCapability = (ctx: ExtensionContext, model: NonNullable<ExtensionContext["model"]>) =>
+		capability(model, ctx.modelRegistry.isUsingOAuth(model));
+	const setStatus = (ctx: ExtensionContext, active: boolean) => {
 		if (!ctx.hasUI) return;
-
-		const status = isEnabled(ctx) && currentModelSupportsFastMode(ctx)
-			? ctx.ui.theme.fg("accent", "fast")
-			: undefined;
-		ctx.ui.setStatus(FAST_MODE_STATUS, status);
+		const outcome = ctx.model && last?.key === modelKey(ctx.model) ? last : undefined;
+		const warning = outcome?.bypassed ? "request set tier" : outcome?.tier && !isFastTier(outcome.tier) ? "fast not used" : undefined;
+		ctx.ui.setStatus(STATUS, active ? ctx.ui.theme.fg(warning ? "warning" : "accent", warning ?? "fast") : undefined);
 	};
-	const restoreState = (ctx: ExtensionContext) => {
-		sessionStates.set(ctx.sessionManager, restoreFastMode(ctx.sessionManager.getBranch()));
-		updateStatus(ctx);
+	const refresh = async (ctx: ExtensionContext) => {
+		setStatus(ctx, false);
+		const model = ctx.model;
+		if (model && optIn(ctx)) {
+			const supported = "field" in await getCapability(ctx, model);
+			if (ctx.model === model && optIn(ctx)) setStatus(ctx, supported);
+		}
+	};
+	const setEnabled = (model: FastModel, value: boolean) => {
+		const key = modelKey(model);
+		if (value) enabled.add(key);
+		else enabled.delete(key);
+		pi.appendEntry(ENTRY, { key, enabled: value });
+	};
+	const restore = (ctx: ExtensionContext) => {
+		enabled.clear();
+		last = undefined;
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type !== "custom" || entry.customType !== ENTRY) continue;
+			const data = record(entry.data);
+			// The previous toggle did not record a model. Don't carry over that opt-in.
+			if (typeof data?.key !== "string") continue;
+			if (data.enabled === true) enabled.add(data.key);
+			else if (data.enabled === false) enabled.delete(data.key);
+		}
 	};
 
-	pi.on("session_start", (_event, ctx) => restoreState(ctx));
-	pi.on("session_tree", (_event, ctx) => restoreState(ctx));
-	pi.on("model_select", (_event, ctx) => updateStatus(ctx));
-	pi.on("session_shutdown", (_event, ctx) => ctx.ui.setStatus(FAST_MODE_STATUS, undefined));
+	const command = async (arg: string, ctx: ExtensionContext) => {
+		const model = ctx.model;
+		if (!model) return ctx.ui.notify("Select a model before using /fast.", "warning");
+		const label = `${model.provider}/${model.id}`;
+		const active = optIn(ctx);
+		if (arg === "off" || (arg === "" && active) || (arg === "status" && !active)) {
+			if (active) setEnabled(model, false);
+			setStatus(ctx, false);
+			return ctx.ui.notify(`Fast mode off for ${label}.`, "info");
+		}
 
-	pi.on("before_provider_request", (event, ctx) => {
-		if (!isEnabled(ctx) || !currentModelSupportsFastMode(ctx) || !ctx.model) return undefined;
-		return addPriorityTier(event.payload, ctx.model.id);
+		const result = await getCapability(ctx, model);
+		if (ctx.model !== model) return;
+		if (!("field" in result)) {
+			setStatus(ctx, false);
+			const why = result.reason === "unavailable" ? "couldn't check provider support" : "this provider doesn't list Fast support";
+			return ctx.ui.notify(`Fast mode ${active ? "paused" : "off"} for ${label}: ${why}.`, "warning");
+		}
+
+		if (!active) setEnabled(model, true);
+		setStatus(ctx, true);
+		const outcome = last?.key === modelKey(model) ? last : undefined;
+		const note = outcome?.bypassed ? " The last request already set its own tier; /fast left it unchanged."
+			: outcome?.tier ? ` Last response reported: ${outcome.tier}.`
+			: outcome ? " Fast was requested; the provider didn't confirm the tier." : "";
+		const billing = model.provider === "openai-codex" ? "Increased ChatGPT usage applies." : "Premium rates apply.";
+		ctx.ui.notify(`Fast mode on for ${label}. ${billing}${arg === "status" ? note : ""}`, "info");
+	};
+
+	pi.registerFlag("fast", { description: "Request Fast mode for the starting model (premium usage)", type: "boolean", default: false });
+	pi.registerCommand("fast", {
+		description: "Toggle Fast mode for the current model (on|off|status)",
+		getArgumentCompletions: (prefix) => ARGS.filter((arg) => arg.startsWith(prefix)).map((arg) => ({ value: arg, label: arg })),
+		handler: async (args, ctx) => {
+			const arg = args.trim().toLowerCase();
+			if (arg && !ARGS.includes(arg)) return ctx.ui.notify("Usage: /fast [on|off|status]", "warning");
+			await command(arg, ctx);
+		},
 	});
 
-	pi.registerCommand("fast", {
-		description: "Toggle OpenAI Fast mode",
-		handler: async (args, ctx) => {
-			if (args.trim()) {
-				ctx.ui.notify("Usage: /fast", "warning");
-				return;
-			}
+	pi.on("session_start", async (event, ctx) => {
+		restore(ctx);
+		if (event.reason === "startup" && pi.getFlag("fast") === true) await command("on", ctx);
+		else await refresh(ctx);
+	});
+	pi.on("session_tree", async (_event, ctx) => { restore(ctx); await refresh(ctx); });
+	pi.on("session_shutdown", (_event, ctx) => setStatus(ctx, false));
+	pi.on("model_select", (_event, ctx) => refresh(ctx));
 
-			const enabled = !isEnabled(ctx);
-			sessionStates.set(ctx.sessionManager, enabled);
-			pi.appendEntry(FAST_MODE_ENTRY, { enabled });
-			updateStatus(ctx);
+	pi.on("before_provider_request", async (event, ctx) => {
+		last = undefined;
+		const model = ctx.model;
+		const payload = record(event.payload);
+		if (!model || !optIn(ctx) || payload?.model !== model.id) return;
+		const result = await getCapability(ctx, model);
+		if (ctx.model !== model || !optIn(ctx)) return;
+		if (!("field" in result)) return setStatus(ctx, false);
+		const bypassed = "service_tier" in payload || (result.field === "speed" && "speed" in payload);
+		last = { key: modelKey(model), bypassed };
+		setStatus(ctx, true);
+		if (!bypassed) return { ...payload, [result.field]: result.value };
+	});
 
-			if (!enabled) {
-				ctx.ui.notify("Fast mode off.", "info");
-				return;
-			}
-			if (!currentModelSupportsFastMode(ctx)) {
-				ctx.ui.notify("Fast mode is on but inactive for the current model or authentication method.", "warning");
-				return;
-			}
+	pi.on("provider_stream_event", (event, ctx) => {
+		const model = ctx.model;
+		if (!last || last.bypassed || !model || last.key !== modelKey(model)
+			|| event.provider !== model.provider || event.api !== model.api || event.model !== model.id) return;
+		const data = record(event.data);
+		const response = record(data?.response);
+		const tier = model.provider === "anthropic"
+			? record(data?.usage)?.speed ?? record(record(data?.message)?.usage)?.speed
+			: response?.service_tier ?? data?.service_tier;
+		if (typeof tier === "string" && tier !== last.tier) {
+			last.tier = tier;
+			setStatus(ctx, optIn(ctx));
+		}
+	});
 
-			const message = ctx.model?.provider === "openai-codex"
-				? "Fast mode on. Increased ChatGPT usage applies."
-				: "Fast mode on. OpenAI Priority pricing applies.";
-			ctx.ui.notify(message, "info");
-		},
+	// Preserve the original extension's Opus 5.5 cost display when Anthropic confirms Fast.
+	// Don't apply that model's multiplier to other Claude models or to OpenAI's own accounting.
+	pi.on("message_end", (event, ctx) => {
+		const { message } = event;
+		if (message.role !== "assistant" || message.provider !== "anthropic" || message.model !== "claude-opus-5-5"
+			|| !ctx.model || last?.key !== modelKey(ctx.model) || !isFastTier(last?.tier)) return;
+		const cost = message.usage.cost;
+		return { message: { ...message, usage: { ...message.usage, cost: {
+			input: cost.input * 2, output: cost.output * 2, cacheRead: cost.cacheRead * 2,
+			cacheWrite: cost.cacheWrite * 2, total: cost.total * 2,
+		} } } };
 	});
 }

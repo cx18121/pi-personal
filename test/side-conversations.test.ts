@@ -44,6 +44,15 @@ test("keeps the main request as the cached prefix and appends newer messages", (
   ]);
 });
 
+test("does not replay the main request's premium tier for side questions", () => {
+  const messages = [{ role: "user", content: "task" }];
+  const main = { messages, speed: "fast", service_tier: "priority" };
+  const fresh = { messages: [...messages, { role: "user", content: "question" }] };
+  expect(reuseMainRequest(main, fresh)).not.toHaveProperty("speed");
+  expect(reuseMainRequest(main, fresh)).not.toHaveProperty("service_tier");
+  expect(reuseMainRequest(main, { ...fresh, service_tier: "standard_only" }).service_tier).toBe("standard_only");
+});
+
 test("uses current branch context when the cached request is not its prefix", () => {
   const main = { system: "old system", messages: [{ role: "user", content: [{ type: "text", text: "old" }] }] };
   const fresh = { system: "current system", messages: [

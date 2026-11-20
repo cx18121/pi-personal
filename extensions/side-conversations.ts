@@ -107,7 +107,15 @@ export const reuseMainRequest = (main: AnthropicPayload, fresh: AnthropicPayload
   if (!matches) return { ...fresh, tool_choice: { type: "none" } };
   const tail = freshMessages.slice(prefix.length).map((message) => JSON.parse(withoutCacheControl(message)));
 
-  return { ...main, messages: [...prefix, ...tail, ...effort], tool_choice: { type: "none" } };
+  // Reuse cache inputs, not the main request's premium speed selection.
+  const { speed: _speed, service_tier: _tier, ...cached } = main;
+  return {
+    ...cached,
+    ...(fresh.speed !== undefined ? { speed: fresh.speed } : {}),
+    ...(fresh.service_tier !== undefined ? { service_tier: fresh.service_tier } : {}),
+    messages: [...prefix, ...tail, ...effort],
+    tool_choice: { type: "none" },
+  };
 };
 
 const extractResponseText = (content: ReadonlyArray<{ type: string; text?: string }>) =>

@@ -34,6 +34,15 @@
         "reserveTokens": 27200
       },
       "openai-codex/gpt-6.1-sol": {
+        "reserveTokens": 50000
+      },
+      "openai-codex/gpt-6.1-terra": {
+        "reserveTokens": 50000
+      },
+      "openai-codex/gpt-6.2-sol": {
+        "reserveTokens": 50000
+      },
+      "openai-codex/gpt-6.2-astra": {
         "reserveTokens": 27200
       }
     }

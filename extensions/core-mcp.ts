@@ -130,6 +130,18 @@ export default function (pi: ExtensionAPI) {
 				[`slack_${name}`, "hidden" as const],
 			])),
 		},
+		posthog: {
+			url: "https://mcp.posthog.com/mcp",
+			headers: {
+				Authorization: "!echo Bearer $(/usr/bin/security find-generic-password -a charliexue -s pi-posthog-mcp -w)",
+				"x-posthog-mcp-version": "2",
+			},
+			exposure: "deferred",
+		},
+		circleback: {
+			url: "https://app.circleback.ai/api/mcp",
+			exposure: "deferred",
+		},
 	} satisfies Record<string, Parameters<ExtensionAPI["registerMcpServer"]>[1]>;
 
 	for (const [name, config] of Object.entries(servers)) {

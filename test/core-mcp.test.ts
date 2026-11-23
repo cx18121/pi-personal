@@ -20,10 +20,10 @@ function registrations(pencilInstalled = true) {
 }
 
 describe("native MCP configuration", () => {
-	test("registers all eight servers with valid native configurations", () => {
+	test("registers all ten servers with valid native configurations", () => {
 		const servers = registrations();
 		expect([...servers.keys()]).toEqual([
-			"linear", "exa", "betterstack", "ecotone", "clickhouse", "context7", "pencil", "slack",
+			"linear", "exa", "betterstack", "ecotone", "clickhouse", "context7", "pencil", "slack", "posthog", "circleback",
 		]);
 		for (const [name, config] of servers) {
 			expect(validateMcpServerConfig(name, config)).not.toBeString();
@@ -33,8 +33,17 @@ describe("native MCP configuration", () => {
 
 	test("skips Pencil when its desktop server is not installed", () => {
 		expect([...registrations(false).keys()]).toEqual([
-			"linear", "exa", "betterstack", "ecotone", "clickhouse", "context7", "slack",
+			"linear", "exa", "betterstack", "ecotone", "clickhouse", "context7", "slack", "posthog", "circleback",
 		]);
+	});
+
+	test("configures PostHog MCP v2 as deferred with Keychain bearer auth", () => {
+		const posthog = registrations().get("posthog")!;
+		if (!("url" in posthog)) throw new Error("Expected HTTP server");
+		expect(posthog.url).toBe("https://mcp.posthog.com/mcp");
+		expect(posthog.exposure).toBe("deferred");
+		expect(posthog.headers?.["x-posthog-mcp-version"]).toBe("2");
+		expect(posthog.headers?.Authorization).toStartWith("!echo Bearer ");
 	});
 
 	test("hides every previously excluded mutation and keeps reads discoverable", () => {

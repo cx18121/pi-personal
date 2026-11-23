@@ -25,6 +25,6 @@
     "../../Projects/personal/herdr-personal/pi-herdr-worktree-jump",
     "npm:@monotykamary/pi-math@0.5.4",
     "npm:pi-agent-browser-native@0.9.6",
-    "npm:@posthog/pi"
+    "https://github.com/earendil-works/pi-claude-code"
   ]
 }

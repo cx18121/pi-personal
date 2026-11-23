@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, McpServerConfig } from "@earendil-works/pi-coding-agent";
 import { getMcpToolExposure, validateMcpServerConfig } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/mcp-servers.js";
@@ -78,7 +80,7 @@ describe("native MCP configuration", () => {
 		if (!("command" in config)) throw new Error("Expected stdio server");
 		expect(config.command).toBe("/usr/bin/python3");
 		expect(config.args?.[0]).toBe("-I");
-		expect(config.args?.[2]).toEndWith("/uv");
+		expect(config.args?.[2]).toBe(join(homedir(), ".local/bin/uv"));
 		expect(config.args).toContain("mcp-clickhouse==0.6.0");
 		expect(config.env?.CLICKHOUSE_ALLOW_WRITE_ACCESS).toBe("false");
 		expect(config.env?.CHDB_ENABLED).toBe("false");

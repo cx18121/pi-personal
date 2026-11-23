@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -87,7 +89,7 @@ export default function (pi: ExtensionAPI) {
 			args: [
 				"-I",
 				fileURLToPath(new URL("../scripts/clickhouse-mcp.py", import.meta.url)),
-				"/Users/charliexue/.local/share/mise/installs/ubi-astral-sh-uv/0.11.28/uv",
+				join(homedir(), ".local/bin/uv"),
 				"tool", "run", "--python", "3.12", "mcp-clickhouse==0.6.0",
 			],
 			env: {

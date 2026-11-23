@@ -54,6 +54,32 @@ const time = (value: unknown) => typeof value === "string" ? Date.parse(value) :
 const textOf = (content: unknown) => typeof content === "string" ? content
 	: Array.isArray(content) ? content.flatMap((part: Json) => part?.type === "text" ? [part.text as string] : []).join("\n") : "";
 
+function summarizeSubagentError(body: string): string {
+	let raw: string | undefined;
+	try {
+		const parsed = JSON.parse(body);
+		if (typeof parsed?.error === "string") raw = parsed.error;
+	} catch {
+		const match = body.match(/"error":\s*"((?:[^"\\]|\\.)*)"/);
+		if (match) {
+			try { raw = JSON.parse(`"${match[1]}"`); } catch { raw = match[1]; }
+		}
+	}
+	if (!raw) return "unknown";
+	const jsonStart = raw.indexOf("{");
+	if (jsonStart !== -1) {
+		try {
+			const nested = JSON.parse(raw.slice(jsonStart));
+			const message = nested?.error?.message ?? nested?.message;
+			if (typeof message === "string" && message.trim()) {
+				const prefix = raw.slice(0, jsonStart).trim();
+				return (prefix ? `${prefix}: ${message.trim()}` : message.trim()).slice(0, 100);
+			}
+		} catch { /* fall back to raw excerpt */ }
+	}
+	return raw.trim().slice(0, 100);
+}
+
 export function parseSession(lines: string[], since: number, seen: Set<string>): Session | undefined {
 	let header: Json | undefined;
 	let compactions = 0;
@@ -75,7 +101,7 @@ export function parseSession(lines: string[], since: number, seen: Set<string>):
 		seen.add(key);
 		if (entry.type === "custom_message" && entry.customType === "pi-codex-subagent-completion" && current) {
 			const body = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
-			if (/"status":\s*"failed"/.test(body)) current.subagentFailures.push(body.match(/"error":\s*"([^"]{0,60})/)?.[1] ?? "unknown");
+			if (/"status":\s*"failed"/.test(body)) current.subagentFailures.push(summarizeSubagentError(body));
 			continue;
 		}
 		if (entry.type !== "message") continue;

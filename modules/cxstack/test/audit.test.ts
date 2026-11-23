@@ -49,3 +49,30 @@ test("metrics count forked history once and flag cache misses, resends, and corr
 	expect(next.previous).toBe(join(result.dir, "metrics.json"));
 	expect(next.metrics.sessions).toBe(0);
 });
+
+test("subagent failure metrics extract readable messages from nested JSON API errors", () => {
+	const root = mkdtempSync(join(tmpdir(), "audit-subagent-"));
+	const sessions = join(root, "sessions", "project");
+	mkdirSync(sessions, { recursive: true });
+	const entries = [
+		{ type: "session", id: "sub-0001", cwd: "/p" },
+		user(0, "review the diff"),
+		{
+			type: "custom_message",
+			id: `c${id++}`,
+			timestamp: at(5),
+			customType: "pi-codex-subagent-completion",
+			content: JSON.stringify({
+				status: "failed",
+				error: '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits."}}',
+			}),
+		},
+		assistant(10, { input: 1000, cacheRead: 0 }),
+	];
+	writeFileSync(join(sessions, "s.jsonl"), entries.map((entry) => JSON.stringify(entry)).join("\n"));
+	const ctx: any = { sessionManager: { getSessionFile: () => undefined, getBranch: () => [] } };
+	const result = runAudit(ctx, 30, { sessions: join(root, "sessions"), audits: join(root, "audits") }, start + 1000 * 1000);
+	expect(result.metrics.subagents.failures).toEqual({
+		"400: You have reached your specified API usage limits.": 1,
+	});
+});

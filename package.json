@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/answer.ts extensions/core-mcp.ts extensions/memory.ts extensions/subagent-idle.ts extensions/browser-guidance.ts extensions/session-title.ts extensions/color-footer.ts extensions/fast-mode.ts && npm --prefix vendor/pi-memory run typecheck"
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/answer.ts extensions/core-mcp.ts extensions/memory.ts extensions/subagent-idle.ts extensions/session-title.ts extensions/color-footer.ts extensions/fast-mode.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -59,7 +59,6 @@
       "./extensions/intercom-toggle.ts",
       "./extensions/notify.ts",
       "./extensions/model-policy.ts",
-      "./extensions/browser-guidance.ts",
       "./extensions/session-title.ts",
       "./extensions/side-conversations.ts",
       "./extensions/subagent-idle.ts",

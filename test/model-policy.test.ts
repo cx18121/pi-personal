@@ -191,3 +191,36 @@ test("provider probe warns once per failing provider and skips recent results", 
   expect(probed).toEqual([]);
   expect(warnings).toHaveLength(1);
 });
+
+test("mid-session quota outages quarantine the failing provider for child spawns while transient errors do not", async () => {
+  const { detectProviderOutage } = await import("../extensions/model-policy.ts");
+  expect(detectProviderOutage("400 You have reached your specified API usage limits.")).toContain("quota");
+  expect(detectProviderOutage("401 invalid_api_key")).toContain("auth");
+  expect(detectProviderOutage("Request timed out.")).toBeUndefined();
+  expect(detectProviderOutage("ECONNRESET")).toBeUndefined();
+
+  const h = harness();
+  const handlers = new Map();
+  extension({ on: (name, handler) => handlers.set(name, handler), appendEntry: () => {} } as never, () => ({}));
+  await handlers.get("tool_result")({ toolName: "spawn_agent", input: { task_name: "rev", model: "anthropic/alternate" }, isError: false }, h.ctx);
+  expect(handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx)).toBeUndefined();
+
+  // Transient error does not quarantine
+  handlers.get("message_end")({ message: { role: "assistant", provider: "anthropic", stopReason: "error", errorMessage: "Request timed out." } }, h.ctx);
+  expect(handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx)).toBeUndefined();
+
+  // Hard quota error in subagent completion quarantines anthropic
+  handlers.get("message_end")({
+    message: {
+      customType: "pi-codex-subagent-completion",
+      content: JSON.stringify({ status: "failed", task_name: "rev", error: "400 You have reached your specified API usage limits." }),
+    },
+  }, h.ctx);
+  const blocked = handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx);
+  expect(blocked?.block).toBe(true);
+  expect(blocked?.reason).toContain("quarantined");
+  const event = { systemPrompt: "base", systemPromptOptions: { sections: {} as Record<string, string> } };
+  handlers.get("before_agent_start")(event, h.ctx);
+  expect(event.systemPromptOptions.sections.model_policy).toContain("Session-quarantined providers: anthropic");
+  expect(event.systemPromptOptions.sections.model_policy).toContain("Allowed scoped child choices: openai-codex/primary.");
+});

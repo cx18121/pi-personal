@@ -1,0 +1,9 @@
+{
+  "guidance": {
+    "description": "Ask 1 to 4 structured questions (2 to 4 options each) when requirements are underspecified or decisions are needed. A \"Type something.\" row is appended automatically to every question (Esc cancels); never author \"Other\" or \"Type something.\" labels. Put a recommended option first with \"(Recommended)\". Use multiSelect: true when multiple choices apply, or options[].preview (single-select only) for mockups, code snippets, diagrams, or configs that need side-by-side comparison.",
+    "promptGuidelines": [
+      "Group clarifying questions into one ask_user_question call instead of stacking calls back to back.",
+      "Do not call ask_user_question in the same reply as an explanation. Wait for the next turn."
+    ]
+  }
+}

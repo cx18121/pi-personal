@@ -1,6 +1,6 @@
 {
   "theme": "dark",
-  "defaultTools": ["+tool_search"],
+  "defaultTools": ["-grep", "-find", "+tool_search"],
   "extensions": ["-builtin:codemode"],
   "defaultThinkingLevel": "high",
   "enabledModels": [

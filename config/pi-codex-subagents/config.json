@@ -1,0 +1,11 @@
+{
+  "modelsFromEnabledModels": true,
+  "retentionDays": 7,
+  "shortcut": "ctrl+shift+a",
+  "defaults": {
+    "extensions": [
+      "~/.pi/agent/git/github.com/earendil-works/pi-claude-code/src/index.ts",
+      "~/.pi/agent/extensions/neon-guard.ts"
+    ]
+  }
+}

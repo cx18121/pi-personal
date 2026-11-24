@@ -110,6 +110,44 @@ export interface SourceInspection {
   projectedContext: ProjectedSessionEntry[];
   earlierContext: Array<{ id: string; type: string; timestamp: string }>;
 }
+function normalizeChar(ch: string): string {
+  if (ch === "\u2018" || ch === "\u2019") return "'";
+  if (ch === "\u201c" || ch === "\u201d") return '"';
+  return ch;
+}
+
+/** Finds an exact or whitespace/smart-quote normalized match and returns the actual verbatim span from sourceText. */
+export function findVerbatimQuote(sourceText: string, quote: string): string | undefined {
+  if (!quote.trim()) return undefined;
+  if (sourceText.includes(quote)) return quote;
+  const normChars: string[] = [];
+  const srcIndex: number[] = [];
+  let inSpace = false;
+  for (let i = 0; i < sourceText.length; i++) {
+    const ch = sourceText[i]!;
+    if (/\s/.test(ch)) {
+      if (!inSpace && normChars.length > 0) {
+        normChars.push(" ");
+        srcIndex.push(i);
+        inSpace = true;
+      }
+    } else {
+      normChars.push(normalizeChar(ch));
+      srcIndex.push(i);
+      inSpace = false;
+    }
+  }
+  const normalizedSource = normChars.join("");
+  const normalizedQuote = quote.trim().replace(/\s+/g, " ").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"');
+  if (!normalizedQuote) return undefined;
+  const pos = normalizedSource.indexOf(normalizedQuote);
+  if (pos < 0) return undefined;
+  const start = srcIndex[pos]!;
+  const endPos = pos + normalizedQuote.length - 1;
+  const end = srcIndex[endPos]! + 1;
+  return sourceText.slice(start, end);
+}
+
 export class SessionEvidence {
   list(manager: ReadonlySessionManager) {
     const branch = manager.getBranch(), sessionId = manager.getSessionId();
@@ -134,17 +172,23 @@ export class SessionEvidence {
       projectedContext: manager.buildSessionProjection().entries.filter(entry => context.some(raw => raw.id === entry.sourceEntry.id)),
       earlierContext: branch.slice(0, branch.length - context.length).map(entry => ({ id: entry.id, type: entry.type, timestamp: entry.timestamp })) });
   }
-  /** The newest requester source on the current branch that contains the exact quote.
+  /** The newest requester source on the current branch that contains the quote (exact or whitespace/smart-quote normalized).
    * Corrections are often saved a few turns after they were said. */
   resolveQuote(manager: ReadonlySessionManager, quote: string): string | undefined {
     if (!quote.trim()) return undefined;
-    return this.list(manager).findLast(source => source.actor === "user" && source.text.includes(quote))?.id;
+    const userSources = this.list(manager).filter(source => source.actor === "user");
+    return (userSources.findLast(source => source.text.includes(quote))
+      ?? userSources.findLast(source => findVerbatimQuote(source.text, quote) !== undefined))?.id;
   }
   evidence(manager: ReadonlySessionManager, id: string, quote: string, kind: Exclude<MemoryKind, "legacy">, fromEntryId?: string): Evidence {
     const { source, citation } = this.inspect(manager, id, { fromEntryId });
-    if (!quote.trim() || !source.text.includes(quote)) throw new Error(`Quote is not an exact substring of evidence ${id}. Copy one contiguous span verbatim from a single source, without stitching, trimming or tool wrapper text.`);
+    const matched = findVerbatimQuote(source.text, quote);
+    if (!matched) {
+      const preview = source.text.replace(/\s+/g, " ").trim().slice(0, 140);
+      throw new Error(`Quote is not an exact substring of evidence ${id}. Copy one contiguous span verbatim from a single source (source starts: "${preview}").`);
+    }
     if (kind !== "fact" && source.actor !== "user") throw new Error("Preferences and settled decisions require requester evidence.");
-    return { actor: source.actor, reference: source.id, quote, observedAt: source.observedAt, source: citation };
+    return { actor: source.actor, reference: source.id, quote: matched, observedAt: source.observedAt, source: citation };
   }
 }
 

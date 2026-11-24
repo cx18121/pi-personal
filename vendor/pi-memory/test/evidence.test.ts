@@ -191,3 +191,13 @@ test("projected continuations reject context edits and compaction instead of sil
     expect(JSON.stringify(shown)).toContain(change === "edit" ? "APPENDED_EDIT_NOT_IN_READING_SPAN" : "NEW_COMPACTION_SUMMARY");
   }
 });
+
+test("quote matching normalizes whitespace and curly quotes to the verbatim source span while rejecting fabricated text", () => {
+  const manager = SessionManager.inMemory(), service = new SessionEvidence();
+  const entry = input(manager, "Use Helium\n\tfor Charlie\u2019s local \u201cprototypes\u201d always.");
+  const id = `${manager.getSessionId()}:${entry}`;
+  expect(service.resolveQuote(manager, 'Use Helium for Charlie\'s local "prototypes"')).toBe(id);
+  const ev = service.evidence(manager, id, 'Use Helium for Charlie\'s local "prototypes"', "preference");
+  expect(ev.quote).toBe("Use Helium\n\tfor Charlie\u2019s local \u201cprototypes\u201d");
+  expect(() => service.evidence(manager, id, "Use Safari instead", "preference")).toThrow("source starts:");
+});

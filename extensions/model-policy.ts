@@ -114,18 +114,40 @@ export default function (
   });
 
   pi.on("message_end", (event, ctx) => {
-    const message = event.message as { role?: string; provider?: string; stopReason?: string; errorMessage?: string; customType?: string; content?: unknown };
+    const message = event.message as { role?: string; provider?: string; stopReason?: string; errorMessage?: string; customType?: string; content?: unknown; details?: Record<string, unknown> };
     if (message.role === "assistant" && message.stopReason === "error") {
       quarantine(message.provider, detectProviderOutage(message.errorMessage), ctx);
       return;
     }
     if (message.customType === "pi-codex-subagent-completion") {
-      const body = textFromContent(message.content);
-      const outage = detectProviderOutage(body);
+      const raw = textFromContent(message.content)
+        .replace(/^\s*<subagent_notification>\s*/i, "")
+        .replace(/\s*<\/subagent_notification>\s*$/i, "")
+        .trim();
+      let parsed: Record<string, unknown> | undefined;
+      try { parsed = JSON.parse(raw) as Record<string, unknown>; } catch { return; }
+      if (parsed?.status !== "failed") return;
+      const errorText = typeof parsed.error === "string" ? parsed.error : undefined;
+      const outage = detectProviderOutage(errorText);
       if (!outage) return;
-      const task = body.match(/"(?:task_name|taskName|name)":\s*"([^"]+)"/)?.[1];
-      const modelProvider = body.match(/"model":\s*"([^"/]+)\//)?.[1];
-      const provider = modelProvider ?? (task ? children.get(taskKey(task)) : undefined);
+      const explicitProvider = typeof parsed.provider === "string"
+        ? parsed.provider
+        : typeof message.details?.provider === "string"
+          ? message.details.provider
+          : undefined;
+      const modelProvider = typeof parsed.model === "string" && parsed.model.includes("/")
+        ? parsed.model.split("/")[0]
+        : typeof parsed.model === "string" && parsed.model.includes(":")
+          ? parsed.model.split(":")[0]
+          : undefined;
+      const task = typeof parsed.agent_name === "string"
+        ? parsed.agent_name
+        : typeof parsed.task_name === "string"
+          ? parsed.task_name
+          : typeof message.details?.agent_name === "string"
+            ? message.details.agent_name
+            : undefined;
+      const provider = explicitProvider ?? modelProvider ?? (task ? children.get(taskKey(task)) : undefined);
       quarantine(provider, outage, ctx);
     }
   });

@@ -209,11 +209,20 @@ test("mid-session quota outages quarantine the failing provider for child spawns
   handlers.get("message_end")({ message: { role: "assistant", provider: "anthropic", stopReason: "error", errorMessage: "Request timed out." } }, h.ctx);
   expect(handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx)).toBeUndefined();
 
-  // Hard quota error in subagent completion quarantines anthropic
+  // Successful subagent mentioning quota words in prose does not quarantine
   handlers.get("message_end")({
     message: {
       customType: "pi-codex-subagent-completion",
-      content: JSON.stringify({ status: "failed", task_name: "rev", error: "400 You have reached your specified API usage limits." }),
+      content: `<subagent_notification>\n${JSON.stringify({ agent_name: "/rev", status: "completed", final_response: "Checked billing and usage limit handling." })}\n</subagent_notification>`,
+    },
+  }, h.ctx);
+  expect(handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx)).toBeUndefined();
+
+  // Hard quota error in subagent completion (real agent_name format) quarantines anthropic
+  handlers.get("message_end")({
+    message: {
+      customType: "pi-codex-subagent-completion",
+      content: `<subagent_notification>\n${JSON.stringify({ agent_name: "/rev", status: "failed", error: "400 You have reached your specified API usage limits." })}\n</subagent_notification>`,
     },
   }, h.ctx);
   const blocked = handlers.get("tool_call")({ toolName: "spawn_agent", input: { model: "anthropic/alternate" } }, h.ctx);

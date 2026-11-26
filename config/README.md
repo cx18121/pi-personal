@@ -20,16 +20,16 @@ Add a `cxModels` object alongside the native settings. For example:
     "disabledProviders": ["anthropic"],
     "helpers": ["session"],
     "overrides": {
-      "answer": ["openai-codex/gpt-6-sol"],
+      "title": ["openai-codex/gpt-6-luna", "session"],
       "review": ["anthropic/claude-opus-5-5", "openai-codex/gpt-6-sol"]
     }
   }
 }
 ```
 
-Omit any overrides you do not need. Active overrides are `answer`, `review`, and `implementation`. Legacy `corrections` and `memory` overrides remain accepted for settings compatibility but have no runtime consumer. The main agent learns through memory tools; memory does not call a helper model. Recall stays local. Arrays are ordered choices, not parallel calls. `session` means the active session model. Exact IDs in this example are illustrative.
+Omit any overrides you do not need. Active overrides are `title`, `review`, and `implementation`. Legacy `answer`, `corrections`, and `memory` overrides remain accepted for settings compatibility but have no runtime consumer. The main agent learns through memory tools; memory does not call a helper model. Recall stays local. Arrays are ordered choices, not parallel calls. `session` means the active session model. Exact IDs in this example are illustrative.
 
-For `/answer`, selection uses its override, then `helpers`, then `["session"]`. Only the first applicable list is used. An override replaces the shared list; add `session` explicitly if you want it as a fallback. Disabled providers and unavailable models are skipped. Authentication and provider-request failures advance to the next configured candidate. Cancellation stops immediately. Invalid response content is reported rather than silently asking more models. Exhausted choices produce an error; models outside the list are never tried.
+For automatic helpers such as session titling (`title`), selection uses its override, then `helpers`, then `["session"]`. Only the first applicable list is used. An override replaces the shared list; add `session` explicitly if you want it as a fallback. Disabled providers and unavailable models are skipped. Authentication and provider-request failures advance to the next configured candidate. Cancellation stops immediately. Invalid response content is reported rather than silently asking more models. Exhausted choices produce an error; models outside the list are never tried.
 
 For delegated work, `review` and `implementation` supply ordered preferences to the parent agent. These are not automatic classifiers. The parent selects an allowed model for each task and may retry a configured fallback after a provider failure. A fresh same-family reviewer is acceptable for ordinary independent review when disclosed. It does not complete a specifically cross-family experiment. The reviewing agent must supply evidence for any explicitly required model runs before reporting success.
 

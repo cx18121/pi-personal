@@ -5,13 +5,7 @@
   "editorPaddingX": 0,
   "packages": [
     "npm:@injaneity/pi-computer-use",
-    {
-      "source": "../../Projects/personal/pi-personal",
-      "extensions": [
-        "+extensions/answer.ts",
-        "+extensions/intercom-toggle.ts"
-      ]
-    },
+    "../../Projects/personal/pi-personal",
     "npm:@juicesharp/rpiv-todo",
     "npm:pi-web-access",
     "npm:@narumitw/pi-goal",

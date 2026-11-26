@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const upstream = join(homedir(), ".pi/agent/npm/node_modules/@ogulcancelik/pi-codex-subagents/index.ts");
+const upstream = join(root, "vendor/pi-codex-subagents/index.ts");
 const provider = join(root, "test/fixtures/subagent-idle-provider.ts");
 const policy = join(root, "extensions/subagent-idle.ts");
 const temporary = mkdtempSync(join(tmpdir(), "pi-idle-probe-"));

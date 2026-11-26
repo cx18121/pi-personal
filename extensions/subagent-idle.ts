@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const blockingWaits = new Set(["wait_agent", "wait_all_agents"]);
 const idleGuideline =
   "Subagent results arrive automatically. Blocking subagent wait tools are unavailable. " +
+  "Do not call list_agents to poll running children. " +
   "Continue independent work after spawning. When only child results remain, end your turn with the task still pending. " +
   "Answer intervening user messages normally, then resume unfinished work when completion notifications arrive.";
 

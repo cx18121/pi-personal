@@ -19,7 +19,6 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@aliou/pi-processes",
     "npm:@ogulcancelik/pi-session-recall",
-    "npm:@ogulcancelik/pi-codex-subagents",
     "../../Projects/personal/herdr-personal/pi-herdr-worktree-jump"
   ]
 }

@@ -16,7 +16,7 @@ import time
 root = Path(__file__).resolve().parents[1]
 provider = root / "test/fixtures/subagent-idle-provider.ts"
 policy = root / "extensions/subagent-idle.ts"
-extension = Path.home() / ".pi/agent/npm/node_modules/@ogulcancelik/pi-codex-subagents/index.ts"
+extension = root / "vendor/pi-codex-subagents/index.ts"
 
 with tempfile.TemporaryDirectory(prefix="pi-wait-tui-") as tmp:
     directory = Path(tmp)

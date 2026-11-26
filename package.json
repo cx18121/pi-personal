@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "bun test ./test ./modules/cxstack/test ./vendor/pi-memory/test",
-    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/core-mcp.ts extensions/memory.ts extensions/subagent-idle.ts extensions/session-controls.ts extensions/session-cwd.ts extensions/session-title.ts extensions/side-conversations.ts extensions/color-footer.ts extensions/fast-mode.ts && npm --prefix vendor/pi-memory run typecheck"
+    "typecheck": "tsc -p modules/cxstack/tsconfig.json --noEmit && tsc --noEmit --strict --target ES2023 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --allowJs extensions/tool-safety.ts extensions/reasoning-label.ts extensions/model-policy.ts extensions/core-mcp.ts extensions/memory.ts extensions/process-watchdog.ts extensions/subagent-idle.ts extensions/session-controls.ts extensions/session-cwd.ts extensions/session-title.ts extensions/side-conversations.ts extensions/color-footer.ts extensions/fast-mode.ts && npm --prefix vendor/pi-memory run typecheck"
   },
   "keywords": [
     "pi-package"
@@ -56,6 +56,7 @@
       "./extensions/inline-skills.ts",
       "./extensions/notify.ts",
       "./extensions/model-policy.ts",
+      "./extensions/process-watchdog.ts",
       "./extensions/session-controls.ts",
       "./extensions/session-cwd.ts",
       "./extensions/session-title.ts",

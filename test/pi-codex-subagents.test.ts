@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildRepoContextPrompt,
+  canAutoRetryChild,
   collectRepoContextFiles,
+  isTransientSubagentError,
+  readRunUsageStats,
   resolveMergedExtensionPaths,
   resolveSpawnCwd,
   type AgentCompletionEvent,
@@ -86,6 +89,41 @@ describe("vendored pi-codex-subagents core helpers", () => {
     expect(merged.extensionPaths).toEqual([defExt, tplExt, optPresent]);
     expect(() => resolveMergedExtensionPaths({ template: [join(root, "missing.ts")] }, root)).toThrow("Extension path not found");
   });
+
+  test("isTransientSubagentError and canAutoRetryChild retry only safe transient errors and never quota/auth or mutated edits", () => {
+    expect(isTransientSubagentError("ECONNRESET: The socket connection was closed")).toBe(true);
+    expect(isTransientSubagentError("Codex error: Our servers are currently overloaded.")).toBe(true);
+    expect(isTransientSubagentError("Unhandled stop reason: MALFORMED_RESPONSE")).toBe(true);
+    expect(isTransientSubagentError("400 You have reached your specified API usage limits.")).toBe(false);
+    expect(isTransientSubagentError("401 invalid_api_key")).toBe(false);
+
+    // Read-only templates retry even if they ran bash
+    expect(canAutoRetryChild({ agentType: "reviewer", retryCount: 0 }, true, "ECONNRESET", 1)).toBe(true);
+    expect(canAutoRetryChild({ agentType: "reviewer", retryCount: 1 }, true, "ECONNRESET", 1)).toBe(false);
+    // Generic children retry only before mutating
+    expect(canAutoRetryChild({ agentType: undefined, retryCount: 0 }, false, "ECONNRESET", 1)).toBe(true);
+    expect(canAutoRetryChild({ agentType: undefined, retryCount: 0 }, true, "ECONNRESET", 1)).toBe(false);
+    // Quota error never auto-retries
+    expect(canAutoRetryChild({ agentType: "reviewer", retryCount: 0 }, false, "400 usage limit", 1)).toBe(false);
+  });
+
+  test("readRunUsageStats aggregates assistant token usage, calls, cost, and duration", () => {
+    const root = makeTemp("subagent-stats-");
+    const session = join(root, "run.jsonl");
+    writeFileSync(session, [
+      JSON.stringify({ type: "message", message: { role: "assistant", usage: { input: 1000, output: 200, cacheRead: 4000, cost: { total: 0.012 } } } }),
+      JSON.stringify({ type: "message", message: { role: "assistant", usage: { input: 500, output: 300, cacheRead: 5000, cost: { total: 0.018 } } } }),
+    ].join("\n"));
+    const stats = readRunUsageStats(session, 10_000, 55_000);
+    expect(stats).toEqual({
+      durationSec: 45,
+      modelCalls: 2,
+      inputTokens: 1500,
+      outputTokens: 500,
+      cacheReadTokens: 9000,
+      costUsd: 0.03,
+    });
+  });
 });
 
 describe("WaveCoordinator", () => {
@@ -141,17 +179,22 @@ describe("WaveCoordinator", () => {
     expect(flushed?.results.map((r) => r.agent_name)).toEqual(["/a"]);
   });
 
-  test("formatWaveBatchPayload spills oversized individual replies to disk without truncating later wave members", () => {
+  test("formatWaveBatchPayload includes wave stats and spills oversized replies without truncating later wave members", () => {
     const big = "line of evidence\n".repeat(1200);
     const formatted = formatWaveBatchPayload({
       parentSessionId: "p1",
       wave: "big",
+      startedAt: 10_000,
+      completedAt: 75_000,
       results: [
-        { agent_name: "/first", status: "completed", final_response: big },
-        { agent_name: "/second", status: "completed", final_response: "SECOND_VERDICT_INTACT" },
+        { agent_name: "/first", status: "completed", model_calls: 4, cost_usd: 0.12, final_response: big },
+        { agent_name: "/second", status: "completed", model_calls: 2, cost_usd: 0.05, final_response: "SECOND_VERDICT_INTACT" },
       ],
     }, 6000);
     expect(formatted.text).toContain("SECOND_VERDICT_INTACT");
+    expect(formatted.text).toContain('"wave_duration_sec": 65');
+    expect(formatted.text).toContain('"total_model_calls": 6');
+    expect(formatted.text).toContain('"total_cost_usd": 0.17');
     expect(formatted.results[0]!.full_output_path).toBeTruthy();
     expect(readFileSync(formatted.results[0]!.full_output_path!, "utf8")).toBe(big);
   });

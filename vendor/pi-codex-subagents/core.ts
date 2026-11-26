@@ -21,6 +21,9 @@ const SOCKET_DIR = path.join(TEMP_ROOT, "sockets");
 export const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 export const DEFAULT_RETENTION_DAYS = 7;
 export const DEFAULT_MODEL_RESPONSE_TIMEOUT_MS = 10 * 60_000;
+export const DEFAULT_MAX_CONCURRENCY = 6;
+export const DEFAULT_MAX_TRANSIENT_RETRIES = 1;
+export const DEFAULT_TRANSIENT_RETRY_DELAY_MS = 2_000;
 const ACTIVITY_PERSIST_INTERVAL_MS = 5_000;
 export const DEFAULT_THINKING = "high";
 export const DEFAULT_TOOLS = "read,bash,grep,find,ls";
@@ -28,9 +31,21 @@ const DEFAULT_SUBAGENT_SYSTEM_PROMPT = "You are a subagent working for a main ag
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const FINAL_STATUSES = new Set<AgentRuntimeStatus>(["completed", "failed", "interrupted"]);
+const ACTIVE_STATUSES = new Set<AgentRuntimeStatus>(["queued", "starting", "running"]);
+const READ_ONLY_TEMPLATES = new Set(["reviewer", "explorer", "researcher"]);
+const MUTATING_TOOLS = new Set(["edit", "write", "apply_patch"]);
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
-export type AgentRuntimeStatus = "starting" | "running" | "completed" | "failed" | "interrupted";
+export type AgentRuntimeStatus = "queued" | "starting" | "running" | "completed" | "failed" | "interrupted";
+
+export interface RunUsageStats {
+  durationSec?: number;
+  modelCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+}
 
 export interface SubagentConfig {
   shortcut?: string;
@@ -39,6 +54,8 @@ export interface SubagentConfig {
   models?: string[];
   modelsFromEnabledModels?: boolean;
   modelResponseTimeoutMs?: number;
+  maxConcurrency?: number;
+  maxTransientRetries?: number;
   defaults?: {
     skills?: string[];
     extensions?: string[];
@@ -89,6 +106,8 @@ export interface AgentInfo {
   sessionFile: string;
   infoFile: string;
   logFile: string;
+  responseFile?: string;
+  retryCount?: number;
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
@@ -158,6 +177,8 @@ interface LiveAgent {
   termination?: Promise<void>;
   candidateResponse: string;
   candidateError?: string;
+  hadMutation: boolean;
+  lastPromptMessage?: string;
   modelResponseTimer?: ReturnType<typeof setTimeout>;
   lastActivityPersistedAt: number;
 }
@@ -171,6 +192,8 @@ export interface AgentCompletionEvent {
   wave?: string;
   status: AgentRuntimeStatus;
   finalResponse?: string;
+  responseFile?: string;
+  stats?: RunUsageStats;
   error?: string;
   createdAt: number;
 }
@@ -187,6 +210,9 @@ export interface AgentManagerOptions {
   onActivityChange?: (event: AgentActivityEvent) => void;
   onUnclaimedCompletion?: (event: AgentCompletionEvent) => void;
   modelResponseTimeoutMs?: number;
+  maxConcurrency?: number;
+  maxTransientRetries?: number;
+  retryDelayMs?: number;
 }
 
 interface Waiter {
@@ -252,6 +278,16 @@ function normalizeConfig(value: unknown): SubagentConfig {
     && raw.modelResponseTimeoutMs >= 0
     ? raw.modelResponseTimeoutMs
     : undefined;
+  const maxConcurrency = typeof raw.maxConcurrency === "number"
+    && Number.isFinite(raw.maxConcurrency)
+    && raw.maxConcurrency >= 0
+    ? Math.floor(raw.maxConcurrency)
+    : undefined;
+  const maxTransientRetries = typeof raw.maxTransientRetries === "number"
+    && Number.isFinite(raw.maxTransientRetries)
+    && raw.maxTransientRetries >= 0
+    ? Math.floor(raw.maxTransientRetries)
+    : undefined;
   return {
     ...(typeof raw.shortcut === "string" && raw.shortcut.trim() ? { shortcut: raw.shortcut.trim() } : {}),
     ...(typeof raw.storageDir === "string" && raw.storageDir.trim() ? { storageDir: raw.storageDir.trim() } : {}),
@@ -259,6 +295,8 @@ function normalizeConfig(value: unknown): SubagentConfig {
     ...(stringList(raw.models) ? { models: stringList(raw.models) } : {}),
     ...(raw.modelsFromEnabledModels === true ? { modelsFromEnabledModels: true } : {}),
     ...(modelResponseTimeoutMs !== undefined ? { modelResponseTimeoutMs } : {}),
+    ...(maxConcurrency !== undefined ? { maxConcurrency } : {}),
+    ...(maxTransientRetries !== undefined ? { maxTransientRetries } : {}),
     ...(defaults && Object.keys(defaults).length ? { defaults } : {}),
   };
 }
@@ -1106,8 +1144,62 @@ export function consumeFirstMatchingMailboxEvent(events: AgentCompletionEvent[],
   return events.splice(index, 1)[0];
 }
 
+export function isTransientSubagentError(errorText: string | undefined): boolean {
+  if (!errorText) return false;
+  if (/reached your specified api usage limits|usage limit|insufficient_quota|exceeded your current quota|credit balance|billing|invalid_api_key|authentication_error|invalid x-api-key|\b400\b|\b401\b|\b403\b/i.test(errorText)) {
+    return false;
+  }
+  return /ECONNRESET|ETIMEDOUT|EPIPE|ENOTFOUND|socket connection was closed|servers are currently overloaded|overloaded_error|MALFORMED_RESPONSE|The operation timed out|\b502\b|\b503\b|\b529\b/i.test(errorText);
+}
+
+export function canAutoRetryChild(
+  info: Pick<AgentInfo, "agentType" | "retryCount">,
+  hadMutation: boolean,
+  error: string | undefined,
+  maxRetries: number,
+): boolean {
+  if (maxRetries <= 0 || (info.retryCount ?? 0) >= maxRetries) return false;
+  if (!isTransientSubagentError(error)) return false;
+  if (info.agentType && READ_ONLY_TEMPLATES.has(info.agentType)) return true;
+  return !hadMutation;
+}
+
+export function readRunUsageStats(sessionFile: string, startedAt?: number, completedAt?: number): RunUsageStats {
+  const stats: RunUsageStats = {
+    ...(startedAt !== undefined && completedAt !== undefined && completedAt >= startedAt
+      ? { durationSec: Math.round((completedAt - startedAt) / 1000) }
+      : {}),
+    modelCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    costUsd: 0,
+  };
+  try {
+    if (!fs.existsSync(sessionFile)) return stats;
+    for (const line of fs.readFileSync(sessionFile, "utf8").split("\n")) {
+      if (!line) continue;
+      let entry: any;
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (entry?.type !== "message" || entry?.message?.role !== "assistant") continue;
+      stats.modelCalls += 1;
+      const usage = entry.message.usage;
+      if (usage && typeof usage === "object") {
+        stats.inputTokens += Number(usage.input ?? 0) || 0;
+        stats.outputTokens += Number(usage.output ?? 0) || 0;
+        stats.cacheReadTokens += Number(usage.cacheRead ?? 0) || 0;
+        stats.costUsd += Number(usage.cost?.total ?? 0) || 0;
+      }
+    }
+  } catch {}
+  stats.costUsd = Math.round(stats.costUsd * 10_000) / 10_000;
+  return stats;
+}
+
 export class AgentManager {
   private readonly live = new Map<string, LiveAgent>();
+  private readonly pendingQueue: Array<{ info: AgentInfo; prompt: string; displayMessage: string }> = [];
+  private launchingCount = 0;
   private readonly mailbox: AgentCompletionEvent[] = [];
   private waiters: Waiter[] = [];
   private readonly waitAllClaims = new Set<{
@@ -1135,9 +1227,9 @@ export class AgentManager {
       this.options.onActivityChange?.({
         parentSessionId: info.parentSessionId,
         agentName: info.canonicalName,
-        active: info.status === "starting" || info.status === "running",
+        active: ACTIVE_STATUSES.has(info.status),
         status: info.status,
-        runStartedAt: info.activeRunStartedAt ?? info.startedAt ?? info.createdAt,
+        runStartedAt: info.status === "queued" ? undefined : (info.activeRunStartedAt ?? info.startedAt ?? info.createdAt),
       });
     } catch {}
   }
@@ -1251,7 +1343,53 @@ export class AgentManager {
     }
   }
 
-  async spawnAgent(params: SpawnAgentParams): Promise<{ task_name: string; nickname: null }> {
+  private effectiveMaxConcurrency(): number {
+    return this.options.maxConcurrency ?? loadSubagentConfig().maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
+  }
+
+  private effectiveMaxTransientRetries(): number {
+    return this.options.maxTransientRetries ?? loadSubagentConfig().maxTransientRetries ?? DEFAULT_MAX_TRANSIENT_RETRIES;
+  }
+
+  private drainQueue(): void {
+    if (this.shutdownController.signal.aborted) return;
+    const limit = this.effectiveMaxConcurrency();
+    while (this.pendingQueue.length > 0 && (limit === 0 || this.live.size + this.launchingCount < limit)) {
+      const next = this.pendingQueue.shift()!;
+      if (next.info.status !== "queued") continue;
+      this.launchingCount += 1;
+      const now = Date.now();
+      next.info.status = "starting";
+      next.info.activeRunStartedAt = now;
+      next.info.lastActivity = now;
+      saveInfo(next.info);
+      this.notifyStatusChange(next.info);
+      void (async () => {
+        try {
+          await this.startLiveAgent(next.info, next.prompt, next.displayMessage);
+        } catch (error) {
+          const message = formatAgentError(error);
+          try { this.markPersistedStartupFailed(next.info, message); } catch {}
+          this.pushMailbox({
+            id: randomUUID(),
+            parentSessionId: next.info.parentSessionId,
+            agentName: next.info.canonicalName,
+            provider: next.info.provider,
+            model: next.info.model,
+            ...(next.info.wave ? { wave: next.info.wave } : {}),
+            status: "failed",
+            error: message,
+            createdAt: Date.now(),
+          });
+        } finally {
+          this.launchingCount = Math.max(0, this.launchingCount - 1);
+          this.drainQueue();
+        }
+      })();
+    }
+  }
+
+  async spawnAgent(params: SpawnAgentParams): Promise<{ task_name: string; nickname: null; queued?: boolean }> {
     await this.reconciliation;
     const taskName = normalizeTaskName(params.task_name);
     const definition = getAgentDefinition(params.agent_type);
@@ -1293,6 +1431,8 @@ export class AgentManager {
       }
       const id = randomUUID();
       const now = Date.now();
+      const maxConc = this.effectiveMaxConcurrency();
+      const shouldQueue = maxConc > 0 && (this.live.size + this.launchingCount >= maxConc);
       const info: AgentInfo = {
         id,
         taskName,
@@ -1320,7 +1460,7 @@ export class AgentManager {
         activeRunStartedAt: now,
         lastActivity: now,
         messageCount: 0,
-        status: "starting",
+        status: shouldQueue ? "queued" : "starting",
         lastTaskMessage: params.message,
       };
       saveInfo(info);
@@ -1329,6 +1469,11 @@ export class AgentManager {
       targets.add(info.canonicalName);
       this.defaultWaitAllTargets.set(params.parentSessionId, targets);
       const prompt = [definition?.prompt, params.message].filter(Boolean).join("\n\n");
+      if (shouldQueue) {
+        this.pendingQueue.push({ info, prompt, displayMessage: params.message });
+        return { task_name: info.canonicalName, nickname: null, queued: true };
+      }
+      this.launchingCount += 1;
       try {
         await this.startLiveAgent(info, prompt, params.message);
       } catch (error) {
@@ -1336,6 +1481,9 @@ export class AgentManager {
         try { this.markPersistedStartupFailed(info, message); } catch {}
         if (error instanceof Error && error.message === message) throw error;
         throw new Error(message, { cause: error });
+      } finally {
+        this.launchingCount = Math.max(0, this.launchingCount - 1);
+        this.drainQueue();
       }
       return { task_name: info.canonicalName, nickname: null };
     } finally {
@@ -1407,6 +1555,8 @@ export class AgentManager {
       exitPromise,
       resolveExit,
       candidateResponse: "",
+      hadMutation: false,
+      lastPromptMessage: initialMessage,
       lastActivityPersistedAt: info.updatedAt,
     };
     this.live.set(info.id, live);
@@ -1540,6 +1690,8 @@ export class AgentManager {
     live.finalizedRun = false;
     live.candidateResponse = "";
     live.candidateError = undefined;
+    live.hadMutation = false;
+    live.lastPromptMessage = message;
     delete live.info.finalResponse;
     delete live.info.error;
     delete live.info.completedAt;
@@ -1639,6 +1791,12 @@ export class AgentManager {
       return;
     }
     if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+      if (event.type === "tool_execution_start") {
+        const toolName = typeof event.toolName === "string" ? event.toolName : "";
+        if (MUTATING_TOOLS.has(toolName) || (toolName === "bash" && (!live.info.agentType || !READ_ONLY_TEMPLATES.has(live.info.agentType)))) {
+          live.hadMutation = true;
+        }
+      }
       live.info.status = "running";
       live.info.lastActivity = Date.now();
       saveInfo(live.info);
@@ -1670,12 +1828,63 @@ export class AgentManager {
     if (event.type === "agent_settled") {
       this.clearModelResponseTimer(live);
       if (live.info.status === "interrupted" || live.finalizedRun) return;
-      if (live.candidateError) this.markFailed(live, live.candidateError);
-      else this.markCompleted(live);
+      if (live.candidateError) {
+        const maxRetries = this.effectiveMaxTransientRetries();
+        if (canAutoRetryChild(live.info, live.hadMutation, live.candidateError, maxRetries)) {
+          this.scheduleTransientRetry(live, live.candidateError);
+          return;
+        }
+        this.markFailed(live, live.candidateError);
+      } else {
+        this.markCompleted(live);
+      }
       void this.terminateProcess(live).catch((error) => {
         live.logger.info("hibernate", "failed to terminate settled child", { error: error instanceof Error ? error.message : String(error) });
       });
     }
+  }
+
+  private scheduleTransientRetry(live: LiveAgent, error: string): void {
+    live.finalizedRun = true;
+    live.info.retryCount = (live.info.retryCount ?? 0) + 1;
+    live.info.status = "starting";
+    live.info.lastActivity = Date.now();
+    saveInfo(live.info);
+    this.notifyStatusChange(live.info);
+    live.logger.info("retry", "auto-retrying child after transient error", { attempt: live.info.retryCount, error });
+    const retryPrompt = live.lastPromptMessage || live.info.lastTaskMessage || "Continue the task from where the transient error interrupted.";
+    const retryDelay = this.options.retryDelayMs ?? DEFAULT_TRANSIENT_RETRY_DELAY_MS;
+    void (async () => {
+      try {
+        await this.terminateProcess(live);
+        const interrupted = () => (live.info.status as AgentRuntimeStatus) === "interrupted" || readInfoFile(live.info.infoFile)?.status === "interrupted";
+        if (this.shutdownController.signal.aborted || interrupted()) return;
+        if (retryDelay > 0) await delay(retryDelay, undefined, { signal: this.shutdownController.signal });
+        if (this.shutdownController.signal.aborted || interrupted()) return;
+        await this.startLiveAgent(live.info, retryPrompt, live.info.lastTaskMessage);
+      } catch (retryError) {
+        if (this.shutdownController.signal.aborted || (live.info.status as AgentRuntimeStatus) === "interrupted") return;
+        const message = formatAgentError(retryError);
+        live.info.status = "failed";
+        live.info.error = message;
+        live.info.completedAt = Date.now();
+        live.info.lastActivity = Date.now();
+        saveInfo(live.info);
+        this.notifyStatusChange(live.info);
+        this.pushMailbox({
+          id: randomUUID(),
+          parentSessionId: live.info.parentSessionId,
+          agentName: live.info.canonicalName,
+          provider: live.info.provider,
+          model: live.info.model,
+          ...(live.info.wave ? { wave: live.info.wave } : {}),
+          status: "failed",
+          error: message,
+          createdAt: Date.now(),
+        });
+        this.drainQueue();
+      }
+    })();
   }
 
   private markCompleted(live: LiveAgent): void {
@@ -1686,7 +1895,13 @@ export class AgentManager {
     delete live.info.error;
     live.info.completedAt = Date.now();
     live.info.lastActivity = Date.now();
+    const responseFile = path.join(path.dirname(live.info.infoFile), `${live.info.id}.response.md`);
+    try {
+      fs.writeFileSync(responseFile, `${live.info.finalResponse}\n`, { mode: 0o600 });
+      live.info.responseFile = responseFile;
+    } catch {}
     saveInfo(live.info);
+    const stats = readRunUsageStats(live.info.sessionFile, live.info.activeRunStartedAt ?? live.info.startedAt, live.info.completedAt);
     this.notifyStatusChange(live.info);
     this.pushMailbox({
       id: randomUUID(),
@@ -1697,8 +1912,11 @@ export class AgentManager {
       ...(live.info.wave ? { wave: live.info.wave } : {}),
       status: "completed",
       finalResponse: live.info.finalResponse,
+      ...(live.info.responseFile ? { responseFile: live.info.responseFile } : {}),
+      stats,
       createdAt: Date.now(),
     });
+    this.drainQueue();
   }
 
   private markFailed(live: LiveAgent, error: string): void {
@@ -1722,6 +1940,7 @@ export class AgentManager {
       error,
       createdAt: Date.now(),
     });
+    this.drainQueue();
   }
 
   private removeMailboxEvents(parentSessionId: string, agentName: string): void {
@@ -1889,6 +2108,16 @@ export class AgentManager {
   async sendMessage(parentSessionId: string, target: string, message: string): Promise<{ delivery: "steer" | "prompt" }> {
     await this.reconciliation;
     let info = this.getAgentInfo(target, parentSessionId);
+    const queuedIndex = this.pendingQueue.findIndex((item) => item.info.id === info.id);
+    if (queuedIndex !== -1) {
+      const queued = this.pendingQueue[queuedIndex]!;
+      queued.prompt = `${queued.prompt}\n\n${message}`;
+      queued.displayMessage = message;
+      queued.info.lastTaskMessage = message;
+      queued.info.lastActivity = Date.now();
+      saveInfo(queued.info);
+      return { delivery: "steer" };
+    }
     let live = this.live.get(info.id);
     if (live?.expectedExit) {
       await live.termination;
@@ -1929,7 +2158,9 @@ export class AgentManager {
     await this.reconciliation;
     const info = this.getAgentInfo(target, parentSessionId);
     const previous = info.status;
-    if (previous !== "starting" && previous !== "running") return { previous_status: previous };
+    if (previous !== "queued" && previous !== "starting" && previous !== "running") return { previous_status: previous };
+    const queuedIndex = this.pendingQueue.findIndex((item) => item.info.id === info.id);
+    if (queuedIndex !== -1) this.pendingQueue.splice(queuedIndex, 1);
     const live = this.live.get(info.id);
     info.status = "interrupted";
     info.lastActivity = Date.now();
@@ -1940,12 +2171,27 @@ export class AgentManager {
       live.info.lastActivity = info.lastActivity;
       live.finalizedRun = true;
       await this.terminateProcess(live);
-    } else {
+    } else if (previous !== "queued") {
       await this.terminateOwnedChild(info);
     }
     this.finishWaitTarget(parentSessionId, info.canonicalName);
     this.pushMailbox({ id: randomUUID(), parentSessionId, agentName: info.canonicalName, status: "interrupted", createdAt: Date.now() }, false);
+    this.drainQueue();
     return { previous_status: previous };
+  }
+
+  async interruptWave(parentSessionId: string, wave: string): Promise<{ wave: string; interrupted: string[] }> {
+    await this.reconciliation;
+    const trimmed = wave.trim();
+    const targets = readScopeInfos(parentSessionId)
+      .filter((info) => info.wave === trimmed && ACTIVE_STATUSES.has(info.status))
+      .map((info) => info.canonicalName);
+    const interrupted: string[] = [];
+    for (const target of targets) {
+      const result = await this.interruptAgent(parentSessionId, target);
+      if (ACTIVE_STATUSES.has(result.previous_status)) interrupted.push(target);
+    }
+    return { wave: trimmed, interrupted };
   }
 
   private signalProcessTree(live: LiveAgent, signal: NodeJS.Signals): void {
@@ -1993,6 +2239,15 @@ export class AgentManager {
   async shutdown(): Promise<void> {
     this.shutdownController.abort(new Error("Agent manager shut down."));
     await this.reconciliation;
+    while (this.pendingQueue.length > 0) {
+      const queued = this.pendingQueue.shift()!;
+      if (queued.info.status === "queued") {
+        queued.info.status = "interrupted";
+        queued.info.lastActivity = Date.now();
+        saveInfo(queued.info);
+        this.notifyStatusChange(queued.info);
+      }
+    }
     const terminations: Promise<void>[] = [];
     for (const live of this.live.values()) {
       if (live.info.status === "starting" || live.info.status === "running") {

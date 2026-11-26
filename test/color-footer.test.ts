@@ -81,4 +81,9 @@ test("shows how long running processes and subagents have run", () => {
 		{ name: "/wave/a", status: "running", startTime: now - 6 * 60_000 },
 		{ name: "/wave/b", status: "starting", startTime: now - 25_000 },
 	], now)).toBe("◌ 2 subagents, longest wave/a 6m · /subagents");
+	expect(formatSubagents([
+		{ name: "/wave/a", status: "running", startTime: now - 60_000 },
+		{ name: "/wave/b", status: "queued" },
+		{ name: "/wave/c", status: "queued" },
+	], now)).toBe("◌ 1 running, 2 queued · /subagents");
 });

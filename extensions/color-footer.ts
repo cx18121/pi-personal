@@ -80,7 +80,7 @@ const latestAssistantUsage = (entries: ReadonlyArray<{ type: string; message?: {
 
 type ProcessInfo = { name: string; status: string; startTime?: number };
 const LIVE_PROCESS_STATUSES = new Set(["running", "terminating", "terminate_timeout"]);
-const LIVE_SUBAGENT_STATUSES = new Set(["starting", "running"]);
+const LIVE_SUBAGENT_STATUSES = new Set(["queued", "starting", "running"]);
 
 export const formatElapsed = (milliseconds: number) => {
 	const minutes = Math.floor(milliseconds / 60_000);
@@ -97,14 +97,20 @@ export const formatProcesses = (processes: ProcessInfo[], now: number) => {
 	return `▶ ${processes.length} processes, longest ${oldest.name}${elapsed(oldest)} · /ps`;
 };
 
-/** Running subagents with active-run elapsed time: one by name, several as a count with the longest. */
+/** Running subagents with active-run elapsed time: one by name, several as a count with the longest (plus queued count). */
 export const formatSubagents = (subagents: ProcessInfo[], now: number) => {
 	if (subagents.length === 0) return "";
 	const elapsed = (item: ProcessInfo) => (item.startTime === undefined ? "" : ` ${formatElapsed(now - item.startTime)}`);
 	const clean = (name: string) => name.replace(/^\/+/, "");
-	if (subagents.length === 1) return `◌ ${clean(subagents[0]!.name)}${elapsed(subagents[0]!)} · /subagents`;
-	const oldest = subagents.reduce((first, item) => ((item.startTime ?? now) < (first.startTime ?? now) ? item : first));
-	return `◌ ${subagents.length} subagents, longest ${clean(oldest.name)}${elapsed(oldest)} · /subagents`;
+	const queued = subagents.filter((item) => item.status === "queued");
+	const active = subagents.filter((item) => item.status !== "queued");
+	if (queued.length > 0) {
+		const parts = [active.length ? `${active.length} running` : "", `${queued.length} queued`].filter(Boolean);
+		return `◌ ${parts.join(", ")} · /subagents`;
+	}
+	if (active.length === 1) return `◌ ${clean(active[0]!.name)}${elapsed(active[0]!)} · /subagents`;
+	const oldest = active.reduce((first, item) => ((item.startTime ?? now) < (first.startTime ?? now) ? item : first));
+	return `◌ ${active.length} subagents, longest ${clean(oldest.name)}${elapsed(oldest)} · /subagents`;
 };
 
 export default function (pi: ExtensionAPI) {

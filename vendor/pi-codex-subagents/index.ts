@@ -26,6 +26,10 @@ export interface WaveMemberResult {
   status: string;
   provider?: string;
   model?: string;
+  response_path?: string;
+  duration_sec?: number;
+  model_calls?: number;
+  cost_usd?: number;
   final_response?: string;
   full_output_path?: string;
 }
@@ -33,12 +37,15 @@ export interface WaveMemberResult {
 export interface WaveBatchDelivery {
   parentSessionId: string;
   wave: string;
+  startedAt: number;
+  completedAt: number;
   results: WaveMemberResult[];
 }
 
 interface WaveState {
   parentSessionId: string;
   wave: string;
+  startedAt: number;
   pending: Set<string>;
   completed: AgentCompletionEvent[];
   sealed: boolean;
@@ -67,7 +74,7 @@ export class WaveCoordinator {
     const key = this.waveKey(parentId, wave);
     let state = this.waves.get(key);
     if (!state) {
-      state = { parentSessionId: parentId, wave, pending: new Set(), completed: [], sealed: false };
+      state = { parentSessionId: parentId, wave, startedAt: Date.now(), pending: new Set(), completed: [], sealed: false };
       this.waves.set(key, state);
     } else {
       state.sealed = false;
@@ -136,21 +143,35 @@ export class WaveCoordinator {
       status: event.status,
       ...(event.provider ? { provider: event.provider } : {}),
       ...(event.model ? { model: event.model } : {}),
+      ...(event.responseFile ? { response_path: event.responseFile } : {}),
+      ...(event.stats?.durationSec !== undefined ? { duration_sec: event.stats.durationSec } : {}),
+      ...(event.stats ? { model_calls: event.stats.modelCalls, cost_usd: event.stats.costUsd } : {}),
       ...(event.finalResponse !== undefined ? { final_response: event.finalResponse } : {}),
     }));
-    return { parentSessionId: state.parentSessionId, wave: state.wave, results };
+    return { parentSessionId: state.parentSessionId, wave: state.wave, startedAt: state.startedAt, completedAt: Date.now(), results };
   }
 }
 
 export function formatWaveBatchPayload(batch: WaveBatchDelivery, maxBytes = DEFAULT_MAX_BYTES - 1024): { text: string; results: WaveMemberResult[] } {
   const results = batch.results.map((item) => ({ ...item }));
-  const serialize = () => JSON.stringify({ wave: batch.wave, status: "completed", count: results.length, results }, null, 2);
+  const waveDurationSec = Math.max(0, Math.round((batch.completedAt - batch.startedAt) / 1000));
+  const totalModelCalls = results.reduce((sum, item) => sum + (item.model_calls ?? 0), 0);
+  const totalCostUsd = Math.round(results.reduce((sum, item) => sum + (item.cost_usd ?? 0), 0) * 10_000) / 10_000;
+  const serialize = () => JSON.stringify({
+    wave: batch.wave,
+    status: "completed",
+    count: results.length,
+    wave_duration_sec: waveDurationSec,
+    total_model_calls: totalModelCalls,
+    total_cost_usd: totalCostUsd,
+    results,
+  }, null, 2);
   if (Buffer.byteLength(serialize(), "utf8") <= maxBytes) return { text: serialize(), results };
   // Preserve every member without silently truncating later ones: spill large individual replies to files.
   const perMemberLimit = Math.max(2048, Math.floor((maxBytes - 2048) / Math.max(1, results.length)));
   for (const item of results) {
     if (item.final_response && Buffer.byteLength(item.final_response, "utf8") > perMemberLimit) {
-      const fullPath = writeFullToolOutput(item.final_response);
+      const fullPath = item.response_path ?? writeFullToolOutput(item.final_response);
       const preview = truncateHead(item.final_response, { maxBytes: perMemberLimit, maxLines: 40 });
       item.final_response = `${preview.content}\n... [full response saved to ${fullPath}]`;
       item.full_output_path = fullPath;
@@ -273,14 +294,18 @@ export default function (pi: ExtensionAPI) {
 
   const refreshAgentWidget = () => {
     if (!activeContext || activeContext.mode !== "tui") return;
-    const running = [...activeRuns.keys()];
-    if (!running.length) {
+    const all = [...activeRuns.values()];
+    if (!all.length) {
       activeContext.ui.setWidget(widgetKey, undefined);
       return;
     }
-    const label = running.length === 1
-      ? `${running[0]} running`
-      : `${running.length} subagents running`;
+    const queued = all.filter((item) => item.status === "queued");
+    const running = all.filter((item) => item.status !== "queued");
+    const label = queued.length > 0
+      ? [running.length ? `${running.length} running` : "", `${queued.length} queued`].filter(Boolean).join(", ")
+      : running.length === 1
+        ? `${running[0]!.name} running`
+        : `${running.length} subagents running`;
     activeContext.ui.setWidget(widgetKey, (_tui: any, theme: Theme) => ({
       render(width: number) {
         const marker = "◌ ";
@@ -306,6 +331,9 @@ export default function (pi: ExtensionAPI) {
       ...(event.provider ? { provider: event.provider } : {}),
       ...(event.model ? { model: event.model } : {}),
       ...(event.wave ? { wave: event.wave } : {}),
+      ...(event.responseFile ? { response_path: event.responseFile } : {}),
+      ...(event.stats?.durationSec !== undefined ? { duration_sec: event.stats.durationSec } : {}),
+      ...(event.stats ? { model_calls: event.stats.modelCalls, cost_usd: event.stats.costUsd } : {}),
       ...(event.finalResponse !== undefined ? { final_response: event.finalResponse } : {}),
       ...(event.error ? { error: event.error } : {}),
     }, null, 2);
@@ -319,6 +347,7 @@ export default function (pi: ExtensionAPI) {
         status: event.status,
         ...(event.provider ? { provider: event.provider } : {}),
         ...(event.wave ? { wave: event.wave } : {}),
+        ...(event.responseFile ? { response_path: event.responseFile } : {}),
         ...(bounded.fullOutputPath ? { fullOutputPath: bounded.fullOutputPath } : {}),
       },
     }, { deliverAs: "steer", triggerTurn: true });
@@ -448,7 +477,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
         const info = manager.getAgentInfo(result.task_name, scopeId);
         const cwdNote = targetCwd !== ctx.cwd ? ` (cwd: ${targetCwd})` : "";
         const waveNote = wave ? ` [wave: ${wave}]` : "";
-        return textResult(`Spawned ${result.task_name}${cwdNote}${waveNote}.`, {
+        const verb = result.queued ? "Queued" : "Spawned";
+        return textResult(`${verb} ${result.task_name}${cwdNote}${waveNote}.`, {
           ...result,
           cwd: targetCwd,
           ...(wave ? { wave } : {}),
@@ -489,7 +519,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
     await manager.ready();
     if (activeContext !== ctx) return;
     for (const entry of manager.listAgents(undefined, parentSessionId(ctx))) {
-      if (entry.agent_status === "starting" || entry.agent_status === "running") {
+      if (entry.agent_status === "queued" || entry.agent_status === "starting" || entry.agent_status === "running") {
         let startTime = Date.now();
         try {
           const info = manager.getAgentInfo(entry.agent_name, parentSessionId(ctx));
@@ -678,11 +708,24 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   pi.registerTool({
     name: "interrupt_agent",
     label: "Interrupt Agent",
-    description: "Abort a session-owned agent's current turn while keeping its session available for later send_message calls.",
-    parameters: Type.Object({ target: Type.String({ description: "Session-owned agent task name." }) }),
+    description: "Abort a session-owned agent's current turn (keeping its session available for later send_message calls), or pass wave to cancel every active and queued member of a wave in one call.",
+    parameters: Type.Object({
+      target: Type.Optional(Type.String({ description: "Session-owned agent task name. Omit when cancelling an entire wave." })),
+      wave: Type.Optional(Type.String({ description: "Optional wave name to interrupt all running and queued members of that wave at once." })),
+    }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       try {
         const scopeId = parentSessionId(ctx);
+        if (typeof params.wave === "string" && params.wave.trim()) {
+          const result = await manager.interruptWave(scopeId, params.wave);
+          let flushed: WaveBatchDelivery | undefined;
+          for (const member of result.interrupted) flushed = waves.detach(scopeId, member) ?? flushed;
+          if (flushed) sendWaveBatch(flushed);
+          return textResult(`Interrupted ${result.interrupted.length} agent(s) in wave ${result.wave}.`, result);
+        }
+        if (typeof params.target !== "string" || !params.target.trim()) {
+          throw new Error("Provide either target or wave.");
+        }
         const canonical = `/${cleanTarget(params.target)}`;
         const result = await manager.interruptAgent(scopeId, cleanTarget(params.target));
         const flushed = waves.detach(scopeId, canonical);
@@ -692,9 +735,13 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
         throw new Error(`interrupt_agent failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     },
-    renderCall(args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("interrupt_agent ")) + theme.fg("accent", args.target || "?"), 0, 0); },
+    renderCall(args: any, theme: Theme) {
+      const label = args.wave ? `wave:${args.wave}` : (args.target || "?");
+      return new Text(theme.fg("toolTitle", theme.bold("interrupt_agent ")) + theme.fg("accent", label), 0, 0);
+    },
     renderResult(result: any, _options: any, theme: Theme) {
       if (result.isError) return new Text(theme.fg("error", "✗ interrupt failed"), 0, 0);
+      if (result.details?.wave) return new Text(theme.fg("warning", `↯ wave ${result.details.wave}: ${result.details.interrupted?.length ?? 0} interrupted`), 0, 0);
       return new Text(theme.fg("warning", `↯ previous: ${result.details?.previous_status || "unknown"}`), 0, 0);
     },
   });

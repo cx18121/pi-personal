@@ -67,7 +67,7 @@ export function findActiveBackgroundWork(
 							taskName?: unknown;
 							childProcess?: { pid?: unknown };
 						};
-						if (info.status !== "starting" && info.status !== "running") continue;
+						if (info.status !== "queued" && info.status !== "starting" && info.status !== "running") continue;
 						const pid = info.childProcess?.pid;
 						if (typeof pid === "number" && Number.isInteger(pid) && pid > 0 && !isPidAlive(pid)) {
 							continue;

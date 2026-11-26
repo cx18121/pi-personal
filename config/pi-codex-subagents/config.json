@@ -1,6 +1,8 @@
 {
   "modelsFromEnabledModels": true,
   "retentionDays": 7,
+  "maxConcurrency": 6,
+  "maxTransientRetries": 1,
   "shortcut": "ctrl+shift+a",
   "defaults": {
     "optionalExtensions": [

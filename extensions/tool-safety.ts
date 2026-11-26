@@ -11,9 +11,15 @@ import { Type, type Static } from "typebox";
 
 const unicodeSpaces = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
+export const DEFAULT_BASH_TIMEOUT_SECONDS = 120;
+
+export interface ToolSafetyOptions {
+	defaultBashTimeoutSeconds?: number;
+}
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Shell command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds" })),
+	timeout: Type.Optional(Type.Number({ description: `Timeout in seconds (default ${DEFAULT_BASH_TIMEOUT_SECONDS})` })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for this command" })),
 });
 
@@ -33,7 +39,11 @@ function isAbort(error: unknown): boolean {
 	return error.message === "Command aborted" || error.message.endsWith("\n\nCommand aborted");
 }
 
-export default function registerToolSafety(pi: ExtensionAPI) {
+export default function registerToolSafety(pi: ExtensionAPI, options: ToolSafetyOptions = {}) {
+	const defaultBashTimeoutSeconds =
+		typeof options?.defaultBashTimeoutSeconds === "number"
+			? options.defaultBashTimeoutSeconds
+			: DEFAULT_BASH_TIMEOUT_SECONDS;
 	let failedFingerprint: string | undefined;
 	let consecutiveFailures = 0;
 
@@ -77,7 +87,7 @@ export default function registerToolSafety(pi: ExtensionAPI) {
 			try {
 				const result = await base.execute(
 					toolCallId,
-					{ command: params.command, timeout: params.timeout },
+					{ command: params.command, timeout: params.timeout ?? defaultBashTimeoutSeconds },
 					signal,
 					onUpdate,
 					ctx,

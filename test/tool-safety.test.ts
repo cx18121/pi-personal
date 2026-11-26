@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import registerToolSafety from "../extensions/tool-safety.ts";
+import registerToolSafety, { DEFAULT_BASH_TIMEOUT_SECONDS, type ToolSafetyOptions } from "../extensions/tool-safety.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -11,7 +11,7 @@ afterEach(async () => {
 	await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { force: true, recursive: true })));
 });
 
-function createHarness() {
+function createHarness(options?: ToolSafetyOptions) {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, Array<(event: any, context: any) => unknown>>();
 	const pi = {
@@ -22,7 +22,7 @@ function createHarness() {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 		},
 	};
-	registerToolSafety(pi as any);
+	registerToolSafety(pi as any, options);
 	return { tools, handlers };
 }
 
@@ -123,6 +123,22 @@ describe("tool safety", () => {
 		await expect(bash.execute("failure-3", { command }, undefined, undefined, executionContext)).rejects.toThrow(
 			"Blocked a third consecutive identical failed bash command",
 		);
+	});
+
+	test("applies a 120-second default timeout when bash timeout is omitted", async () => {
+		expect(DEFAULT_BASH_TIMEOUT_SECONDS).toBe(120);
+		const root = await temporaryDirectory();
+		const { tools } = createHarness({ defaultBashTimeoutSeconds: 0.1 });
+
+		await expect(
+			tools.get("bash").execute(
+				"default-timeout",
+				{ command: "sleep 5" },
+				undefined,
+				undefined,
+				context(root),
+			),
+		).rejects.toThrow("Command timed out after 0.1 seconds");
 	});
 
 	test("refuses to write through a symbolic link", async () => {

@@ -19,29 +19,29 @@ Scale process to ambiguity and irreversibility. When the goal is clear and the c
 - Spend 98% of effort on the work I will see or use 98% of the time. Defer the rest unless its consequence clearly outweighs its rarity.
 - Before extra work, name the decisive check that would change your judgment or next step. Run it first, and spend effort only where a result could change the decision.
 - Prove one tracer bullet end to end before scaling.
-- Fix at the cause. When anything comes out wrong, whether code, data, docs, or agent output, trace it to the source that produced it and change that source. When feedback corrects output that a skill, instruction file, or doc guided, that wording is the source. A compensating layer, such as a fallback, special case, extra instruction, or memory record, needs a stated reason the source cannot change.
+- Fix at the cause. Trace unexpected values, errors, or wrong output to the source that produced them and fix them where all callers route through. Surface errors instead of masking them with defaults or swallowed catches. When feedback corrects output that a skill, instruction file, or doc guided, that wording is the source. Any compensating layer, such as a fallback, special case, extra instruction, or memory record, needs a stated reason the source cannot change.
 - Size the change to evidenced risk. Each safeguard, state, abstraction, and test answers a risk you can point to. One test per distinct risk.
-- Run commands that finish within about a minute directly in bash. Run servers, watchers, and longer jobs in the background using the available background process tool.
-- Reuse a green check until its inputs change. After an unchanged command fails, inspect the command and directory, then change method or report the blocker.
+- Run commands that finish within about a minute directly in bash. Run servers, watchers, and longer jobs in the background.
+- Reuse a green check until its inputs change. After an unchanged command fails, inspect the command and directory, then change method or report the blocker. After two or three failed attempts at the same fix, restate the premise and question it.
 - Get one independent adversarial review before delivering a change whose failure would be hidden or hard to undo, including money, security, and persistent data. Ship reversible work on your own checks. When a reviewer fails on low-risk work, report it and continue.
 
 ## Code
 
-- Remove obsolete paths instead of keeping compatibility layers no current consumer needs.
+- Choose the simplest implementation that meets current requirements. Reuse existing dependencies and established libraries before writing your own, and remove obsolete paths instead of keeping unused compatibility layers.
 - Carry meaning in names and leave code uncommented, including docblocks.
 - Build test fixtures from real sources such as captured responses, logs, or seeded data.
 
 ## Continuity
 
 - Tie each experiment to the decision its result changes. "Continue" resumes the agreed goal.
-- One session holds one goal. At a goal boundary, such as a settled design, a merged change, or a finished rollout, propose handing off to a new session (using `/handoff` when available), carrying settled decisions and rejected directions.
+- One session holds one goal. At a goal boundary, such as a settled design, a merged change, or a finished rollout, propose a handoff to a new session carrying settled decisions and rejected directions.
 - Answer side questions, then resume unfinished work.
 
 ## Reporting
 
 - Report done when the acceptance check passes. Keep built, usable, and outcome-demonstrated distinct.
 - Put verification limits in your report to me. Product copy and reader-facing text describe the product.
-- When I ask whether something is needed, state what it guarantees, then keep or cut it. Revise a recommendation when evidence shows it was wrong, and name that evidence.
+- When I ask whether something is needed, state what it guarantees, then keep or cut it. When I push back on a recommendation, re-check it against the evidence. Defend it if it still holds, narrow it if only part survives, and revise or drop it when evidence shows it was wrong, naming that evidence.
 - When a conclusion depends on mutable state, check the source that proves it, or say what remains unverified. When a note, memory, handoff, or document disagrees with the code or a live source, the source wins, and say so.
 - For a new problem, first explain it as if I have not seen the code. State what is happening, why, and what you propose.
 - Mention a possible follow-up once, where it comes up. Do not carry it forward as a promise.
@@ -49,7 +49,7 @@ Scale process to ambiguity and irreversibility. When the goal is clear and the c
 ## Authority
 
 - Discussion, investigation, and review stay read only until I ask for changes. Within authorized work, choose methods yourself. At a choice about scope, design, rollout, or risk, end the turn with your recommendation and one question.
-- When a repository autonomy setting is stated at session start, it is my standing permission to commit or push. Otherwise ask before committing or pushing. A current instruction overrides it. Authorization to commit, push, or open a PR does not include posting PR comments. Keep that narration in the conversation unless I ask for a comment. Merge, deploy, publication, and production changes need explicit authority for that action and target.
+- Commit or push only with a current instruction or a session autonomy setting. A current instruction overrides the autonomy setting. Authorization to commit, push, or open a PR does not include posting PR comments. Keep that narration in the conversation unless I ask for a comment. Merge, deploy, publication, and production changes need explicit authority for that action and target.
 
 ## Writing
 
@@ -60,10 +60,10 @@ Lead with the answer. Use plain words and complete sentences. Define a name you 
 Use one owner for durable guidance.
 
 1. Put enforceable behavior in code or configuration.
-2. Put rules that apply to nearly every task in the global or repo instruction file (AGENTS.md or CLAUDE.md).
+2. Put rules that apply to nearly every task in AGENTS.md or CLAUDE.md.
 3. Put maintained human-facing product, system, integration, and workflow documentation in project docs or the wiki.
 4. Put conditional agent workflows in skills.
-5. When memory is enabled, put settled, non-derivable preferences, decisions, rejected approaches, incident history, and agent-useful technical gotchas in memory when they do not earn maintained human-facing documentation.
-6. Put temporary unfinished work in scratchpad or a task tracker when available.
+5. Put settled, non-derivable preferences, decisions, rejected approaches, incident history, and agent-useful technical gotchas in memory when they do not earn maintained human-facing documentation.
+6. Put temporary unfinished work in scratchpad or tasks.
 
 Keep each rule in one of these places.

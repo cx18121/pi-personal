@@ -80,6 +80,7 @@ const latestAssistantUsage = (entries: ReadonlyArray<{ type: string; message?: {
 
 type ProcessInfo = { name: string; status: string; startTime?: number };
 const LIVE_PROCESS_STATUSES = new Set(["running", "terminating", "terminate_timeout"]);
+const LIVE_SUBAGENT_STATUSES = new Set(["starting", "running"]);
 
 export const formatElapsed = (milliseconds: number) => {
 	const minutes = Math.floor(milliseconds / 60_000);
@@ -96,27 +97,52 @@ export const formatProcesses = (processes: ProcessInfo[], now: number) => {
 	return `▶ ${processes.length} processes, longest ${oldest.name}${elapsed(oldest)} · /ps`;
 };
 
+/** Running subagents with active-run elapsed time: one by name, several as a count with the longest. */
+export const formatSubagents = (subagents: ProcessInfo[], now: number) => {
+	if (subagents.length === 0) return "";
+	const elapsed = (item: ProcessInfo) => (item.startTime === undefined ? "" : ` ${formatElapsed(now - item.startTime)}`);
+	const clean = (name: string) => name.replace(/^\/+/, "");
+	if (subagents.length === 1) return `◌ ${clean(subagents[0]!.name)}${elapsed(subagents[0]!)} · /subagents`;
+	const oldest = subagents.reduce((first, item) => ((item.startTime ?? now) < (first.startTime ?? now) ? item : first));
+	return `◌ ${subagents.length} subagents, longest ${clean(oldest.name)}${elapsed(oldest)} · /subagents`;
+};
+
 export default function (pi: ExtensionAPI) {
 	let repoStats = emptyRepoStats(process.cwd());
 	let cacheHit: number | undefined;
 	let runningProcesses: ProcessInfo[] = [];
+	let runningSubagents: ProcessInfo[] = [];
 	let requestRender = () => {};
 	let elapsedTicker: ReturnType<typeof setInterval> | undefined;
+
+	const syncTicker = () => {
+		const active = runningProcesses.length > 0 || runningSubagents.length > 0;
+		if (active && elapsedTicker === undefined) elapsedTicker = setInterval(() => requestRender(), 15_000);
+		if (!active && elapsedTicker !== undefined) {
+			clearInterval(elapsedTicker);
+			elapsedTicker = undefined;
+		}
+	};
 
 	// pi-processes answers list requests on its event bus. Show only live processes.
 	const refreshProcesses = () => {
 		let processes: ProcessInfo[] = [];
 		pi.events.emit("processes:request:list", { reply: (result: ProcessInfo[]) => { processes = result; } });
 		runningProcesses = processes.filter((item) => LIVE_PROCESS_STATUSES.has(item.status));
-		// Keep elapsed times current while anything runs.
-		if (runningProcesses.length > 0 && elapsedTicker === undefined) elapsedTicker = setInterval(() => requestRender(), 15_000);
-		if (runningProcesses.length === 0 && elapsedTicker !== undefined) {
-			clearInterval(elapsedTicker);
-			elapsedTicker = undefined;
-		}
+		syncTicker();
 		requestRender();
 	};
 	pi.events.on("processes:changed", refreshProcesses);
+
+	// vendored pi-codex-subagents answers list requests on its event bus. Show only live children.
+	const refreshSubagents = () => {
+		let subagents: ProcessInfo[] = [];
+		pi.events.emit("subagents:request:list", { reply: (result: ProcessInfo[]) => { subagents = result; } });
+		runningSubagents = subagents.filter((item) => LIVE_SUBAGENT_STATUSES.has(item.status));
+		syncTicker();
+		requestRender();
+	};
+	pi.events.on("subagents:changed", refreshSubagents);
 
 	pi.on("message_end", (event) => {
 		const message = event.message as { role?: string; usage?: Usage };
@@ -171,6 +197,7 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.mode !== "tui") return;
 		cacheHit = cacheHitPercent(latestAssistantUsage(ctx.sessionManager.getBranch() as never));
 		refreshProcesses();
+		refreshSubagents();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
@@ -227,12 +254,15 @@ export default function (pi: ExtensionAPI) {
 						repoStats.additions > 0 ? theme.fg("success", `+${repoStats.additions}`) : "",
 						repoStats.deletions > 0 ? theme.fg("error", `−${repoStats.deletions}`) : "",
 					].filter(Boolean).join(" ");
-					const processes = runningProcesses.length === 0 ? "" : theme.fg("accent", formatProcesses(runningProcesses, Date.now()));
+					const now = Date.now();
+					const processes = runningProcesses.length === 0 ? "" : theme.fg("accent", formatProcesses(runningProcesses, now));
+					const subagents = runningSubagents.length === 0 ? "" : theme.fg("accent", formatSubagents(runningSubagents, now));
 					const status = [
 						[model, thinking, fastMode, autonomy ? theme.fg("accent", `autonomy ${autonomy}`) : ""].filter(Boolean).join(" "),
 						[`${contextBar} ${contextLabel}`, cacheLabel].filter(Boolean).join(" "),
 						worktreeDiff,
 						processes,
+						subagents,
 					].filter(Boolean).join(separator);
 					const statusLine = truncateToWidth(status, width, theme.fg("dim", "…"));
 					return [locationLine, statusLine];

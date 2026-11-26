@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import colorFooter, { formatProcesses } from "../extensions/color-footer.ts";
+import colorFooter, { formatProcesses, formatSubagents } from "../extensions/color-footer.ts";
 
 test("renders active extension modes", async () => {
 	const handlers = new Map<string, (...args: any[]) => any>();
@@ -69,11 +69,16 @@ test("renders active extension modes", async () => {
 	expect(footer?.render(200).join("\n")).not.toContain("▶");
 });
 
-test("shows how long running processes have run", () => {
+test("shows how long running processes and subagents have run", () => {
 	const now = Date.parse("2026-11-10T12:00:00Z");
 	expect(formatProcesses([{ name: "tests", status: "running", startTime: now - 3 * 60_000 }], now)).toBe("▶ tests 3m · /ps");
 	expect(formatProcesses([
 		{ name: "server", status: "running", startTime: now - 75 * 60_000 },
 		{ name: "tests", status: "running", startTime: now - 40_000 },
 	], now)).toBe("▶ 2 processes, longest server 1h 15m · /ps");
+	expect(formatSubagents([{ name: "/reviewer", status: "running", startTime: now - 2 * 60_000 }], now)).toBe("◌ reviewer 2m · /subagents");
+	expect(formatSubagents([
+		{ name: "/wave/a", status: "running", startTime: now - 6 * 60_000 },
+		{ name: "/wave/b", status: "starting", startTime: now - 25_000 },
+	], now)).toBe("◌ 2 subagents, longest wave/a 6m · /subagents");
 });

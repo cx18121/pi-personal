@@ -45,7 +45,7 @@ export type Metrics = {
 export const CORRECTION_PATTERNS: Record<string, RegExp> = {
 	needed: /\b(do|did|does) (we|u|you) (even |really )?need\b|\bis (this|that|it) (even |really )?(needed|necessary)\b/i,
 	explain: /\bexplain (it |this |that )?(again|simpl|like|as if|first|better)|\bno (prior )?context\b|\bwhat (are|r) (we|u|you) (even )?(doing|talking)|\b(idk|i don'?t know) what\b/i,
-	complexity: /over ?complicat|too (complicated|careful|much)|\bsimpler?\b|\bjust (do|remove|commit|open)\b/i,
+	complexity: /over ?complicat|too (complicated|careful|much)|\bsimpler?\b/i,
 	frustration: /\bwtf\b|\bwhy (did|would|are) (u|you)\b|\?\?\?/i,
 	status: /\b(update|status)\?|\bis it (still )?running\b|\bwhat'?s left\b/i,
 };

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { reuseMainRequest } from "../extensions/side-conversations.ts";
+import {
+  deriveSideSessionName,
+  reuseMainRequest,
+  reuseResponsesMainRequest,
+} from "../extensions/side-conversations.ts";
 
 const cached = { type: "ephemeral" };
 const effort = (level: string) => ({ role: "system", content: [], output_config: { effort: level } });
@@ -67,4 +71,89 @@ test("matching only the last message does not establish a shared prefix", () => 
   const main = { messages: [{ role: "user", content: "old branch" }, sameLast] };
   const fresh = { messages: [{ role: "user", content: "new branch" }, sameLast, { role: "user", content: "question" }] };
   expect(reuseMainRequest(main, fresh).messages).toEqual(fresh.messages);
+});
+
+test("reuses OpenAI Codex / Responses cached prefix, instructions, tools, and cache key", () => {
+  const main = {
+    model: "gpt-6.2-sol",
+    instructions: "main system prompt",
+    tools: [{ type: "function", name: "bash" }],
+    reasoning: { effort: "high", summary: "auto" },
+    prompt_cache_key: "sess-123",
+    service_tier: "priority",
+    input: [
+      { role: "user", content: [{ type: "input_text", text: "task" }] },
+      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
+      { type: "function_call_output", call_id: "c1", output: "ok" },
+    ],
+  };
+  const fresh = {
+    model: "gpt-6.2-sol",
+    instructions: "btw system prompt",
+    prompt_cache_key: "sess-123",
+    input: [
+      { role: "user", content: [{ type: "input_text", text: "task" }] },
+      { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" },
+      { type: "function_call_output", call_id: "c1", output: "ok" },
+      { role: "user", content: [{ type: "input_text", text: "side question" }] },
+    ],
+  };
+
+  const request = reuseResponsesMainRequest(main, fresh);
+
+  expect(request.instructions).toBe("main system prompt");
+  expect(request.tools).toBe(main.tools);
+  expect(request.reasoning).toEqual(main.reasoning);
+  expect(request.prompt_cache_key).toBe("sess-123");
+  expect(request).not.toHaveProperty("service_tier");
+  expect(request.tool_choice).toBe("none");
+  expect(request.input).toEqual(fresh.input);
+});
+
+test("reuses OpenAI Responses leading developer message and falls back on branch divergence", () => {
+  const main = {
+    model: "gpt-5",
+    input: [
+      { role: "developer", content: "main system" },
+      { role: "user", content: "task" },
+    ],
+  };
+  const matchingFresh = {
+    model: "gpt-5",
+    input: [
+      { role: "developer", content: "btw system" },
+      { role: "user", content: "task" },
+      { role: "user", content: "question" },
+    ],
+  };
+  const divergedFresh = {
+    model: "gpt-5",
+    input: [
+      { role: "developer", content: "btw system" },
+      { role: "user", content: "other branch" },
+      { role: "user", content: "question" },
+    ],
+  };
+
+  expect(reuseResponsesMainRequest(main, matchingFresh)).toEqual({
+    model: "gpt-5",
+    input: [
+      { role: "developer", content: "main system" },
+      { role: "user", content: "task" },
+      { role: "user", content: "question" },
+    ],
+    tool_choice: "none",
+  });
+  expect(reuseResponsesMainRequest(main, divergedFresh)).toEqual({
+    ...divergedFresh,
+    tool_choice: "none",
+  });
+});
+
+test("deriveSideSessionName builds readable session names without doubling prefix", () => {
+  expect(deriveSideSessionName("Check webhook retries", "Main")).toBe("Side: Check webhook retries");
+  expect(deriveSideSessionName("", "Main", ["Why did cache miss?"])).toBe("Side: Why did cache miss?");
+  expect(deriveSideSessionName("", "Billing Refactor")).toBe("Side: Billing Refactor");
+  expect(deriveSideSessionName("", "Side: Already Prefixed")).toBe("Side: Already Prefixed");
+  expect(deriveSideSessionName("", undefined)).toBe("Side conversation");
 });

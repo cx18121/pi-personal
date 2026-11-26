@@ -75,9 +75,19 @@ type DrawerRuntime = {
 };
 
 type AnthropicPayload = Record<string, unknown> & { messages: unknown[] };
+type ResponsesPayload = Record<string, unknown> & { input: unknown[] };
+
+const RESPONSES_APIS = new Set([
+  "openai-codex-responses",
+  "openai-responses",
+  "azure-openai-responses",
+]);
 
 const isAnthropicPayload = (value: unknown): value is AnthropicPayload =>
   typeof value === "object" && value !== null && Array.isArray((value as { messages?: unknown }).messages);
+
+const isResponsesPayload = (value: unknown): value is ResponsesPayload =>
+  typeof value === "object" && value !== null && Array.isArray((value as { input?: unknown }).input);
 
 const withoutCacheControl = (value: unknown) =>
   JSON.stringify(value, (key, nested) => (key === "cache_control" ? undefined : nested));
@@ -85,6 +95,18 @@ const withoutCacheControl = (value: unknown) =>
 // Opus and Fable carry effort in system messages. Trailing ones set the active effort.
 const isEffortMarker = (message: unknown) =>
   typeof message === "object" && message !== null && (message as { role?: unknown }).role === "system";
+
+const isLeadingSystemInput = (item: unknown) => {
+  if (typeof item !== "object" || item === null) return false;
+  const role = (item as { role?: unknown }).role;
+  return role === "system" || role === "developer";
+};
+
+const splitLeadingSystemInput = (input: unknown[]) => {
+  let index = 0;
+  while (index < input.length && isLeadingSystemInput(input[index])) index++;
+  return { leading: input.slice(0, index), body: input.slice(index) };
+};
 
 const splitTrailingEffort = (messages: unknown[]) => {
   const body = [...messages];
@@ -116,6 +138,45 @@ export const reuseMainRequest = (main: AnthropicPayload, fresh: AnthropicPayload
     messages: [...prefix, ...tail, ...effort],
     tool_choice: { type: "none" },
   };
+};
+
+/**
+ * Replays the main agent's last OpenAI Responses / Codex request so `/btw`
+ * keeps the exact `instructions`, `tools`, `reasoning`, `prompt_cache_key`,
+ * and input prefix that OpenAI cached, while blocking tools with `tool_choice: "none"`.
+ */
+export const reuseResponsesMainRequest = (main: ResponsesPayload, fresh: ResponsesPayload) => {
+  const { leading: mainLeading, body: prefix } = splitLeadingSystemInput(main.input);
+  const { body: freshBody } = splitLeadingSystemInput(fresh.input);
+  const matches = prefix.length > 0 && prefix.length <= freshBody.length
+    && prefix.every((item, index) => JSON.stringify(item) === JSON.stringify(freshBody[index]));
+  if (!matches) return { ...fresh, tool_choice: "none" };
+  const tail = freshBody.slice(prefix.length);
+
+  // Reuse cache inputs, not the main request's premium speed selection.
+  const { speed: _speed, service_tier: _tier, ...cached } = main;
+  return {
+    ...cached,
+    ...(fresh.speed !== undefined ? { speed: fresh.speed } : {}),
+    ...(fresh.service_tier !== undefined ? { service_tier: fresh.service_tier } : {}),
+    input: [...mainLeading, ...prefix, ...tail],
+    tool_choice: "none",
+  };
+};
+
+export const deriveSideSessionName = (
+  prompt: string,
+  parentSessionName: string | undefined,
+  seedQuestions: string[] = [],
+): string => {
+  const candidate =
+    prompt.replace(/\s+/g, " ").trim()
+    || seedQuestions.find((q) => q.trim())?.replace(/\s+/g, " ").trim()
+    || parentSessionName?.replace(/\s+/g, " ").trim();
+  if (!candidate) return "Side conversation";
+  const prefix = candidate.toLowerCase().startsWith("side:") ? "" : "Side: ";
+  const full = `${prefix}${candidate}`;
+  return full.length > 52 ? `${full.slice(0, 51)}…` : full;
 };
 
 const extractResponseText = (content: ReadonlyArray<{ type: string; text?: string }>) =>
@@ -349,6 +410,7 @@ class BtwDrawer implements Component, Focusable {
 export default function (pi: ExtensionAPI) {
   let btwTurns: BtwTurn[] = [];
   let lastMainRequest: AnthropicPayload | undefined;
+  let lastResponsesRequest: ResponsesPayload | undefined;
   let activeBtwController: AbortController | undefined;
   let drawerRuntime: DrawerRuntime | undefined;
   let thinkingFrame = 0;
@@ -365,15 +427,20 @@ export default function (pi: ExtensionAPI) {
   const runHerdr = (args: string[], timeout = 30_000) => runHostCommand("herdr", args, timeout);
   const runSuperset = (args: string[], timeout = 30_000) => runHostCommand("superset", args, timeout);
 
-  const startHerdrSideAgent = async (paneId: string, sessionPath: string | undefined, name: string) => {
+  const startHerdrSideAgent = async (
+    paneId: string,
+    sessionPath: string | undefined,
+    agentName: string,
+    displayName: string,
+  ) => {
     const piArgs = [
       ...(sessionPath ? ["--session", sessionPath] : []),
       "--name",
-      name,
+      displayName,
       "--append-system-prompt",
       SIDE_SYSTEM_PROMPT,
     ];
-    const args = ["agent", "start", name, "--kind", "pi", "--pane", paneId, "--timeout", "30000", "--", ...piArgs];
+    const args = ["agent", "start", agentName, "--kind", "pi", "--pane", paneId, "--timeout", "30000", "--", ...piArgs];
 
     for (let attempt = 0; attempt < 12; attempt++) {
       const result = await pi.exec("herdr", args, { timeout: 35_000 });
@@ -494,7 +561,8 @@ export default function (pi: ExtensionAPI) {
     parentPaneId: string,
     sessionPath: string | undefined,
     effectivePrompt: string,
-    name: string,
+    agentName: string,
+    displayName: string,
     ctx: ExtensionContext,
   ) => {
     const splitOutput = await splitForSide(parentPaneId, ctx);
@@ -503,11 +571,11 @@ export default function (pi: ExtensionAPI) {
     if (!paneId) throw new Error("Herdr did not return the new pane id");
 
     try {
-      await startHerdrSideAgent(paneId, sessionPath, name);
+      await startHerdrSideAgent(paneId, sessionPath, agentName, displayName);
       if (effectivePrompt) {
         await runHerdr(["agent", "prompt", paneId, effectivePrompt], 10_000);
       }
-      return name;
+      return displayName;
     } catch (error) {
       const closeResult = await pi.exec("herdr", ["pane", "close", paneId], { timeout: 5_000 });
       if (closeResult.code !== 0) {
@@ -594,19 +662,24 @@ export default function (pi: ExtensionAPI) {
   };
 
   const launchSide = async (prompt: string, ctx: ExtensionContext, seedTurns: CompletedBtwTurn[] = []) => {
-    const name = `side-${randomUUID().slice(0, 6)}`;
+    const agentName = `side-${randomUUID().slice(0, 6)}`;
+    const displayName = deriveSideSessionName(
+      prompt,
+      ctx.sessionManager.getSessionName(),
+      seedTurns.map((turn) => turn.question),
+    );
     let sessionPath: string | undefined;
 
     ctx.ui.setWidget("side-session-launch", undefined);
-    ctx.ui.notify("Opening side session…", "info");
+    ctx.ui.notify(`Opening ${displayName}…`, "info");
 
     try {
-      const sideSession = createSideSession(prompt, name, ctx, seedTurns);
+      const sideSession = createSideSession(prompt, displayName, ctx, seedTurns);
       sessionPath = sideSession.sessionPath;
       const opened = process.env.SUPERSET_WORKSPACE_ID
         ? await launchSupersetSide(process.env.SUPERSET_WORKSPACE_ID, sessionPath, sideSession.effectivePrompt)
         : process.env.HERDR_PANE_ID
-          ? await launchHerdrSide(process.env.HERDR_PANE_ID, sessionPath, sideSession.effectivePrompt, name, ctx)
+          ? await launchHerdrSide(process.env.HERDR_PANE_ID, sessionPath, sideSession.effectivePrompt, agentName, displayName, ctx)
           : showTerminalFallback(sessionPath, sideSession.effectivePrompt, ctx);
 
       ctx.ui.notify(`Opened ${opened}`, "info");
@@ -638,27 +711,29 @@ export default function (pi: ExtensionAPI) {
     };
 
     try {
-      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) return { kind: "failed", message: auth.error };
-
-      const provider = ctx.modelRegistry.getProvider(model.provider);
-      if (!provider) return { kind: "failed", message: `Provider not found: ${model.provider}` };
-
-      const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
       const messages = [...convertToLlm(context.messages), userMessage];
-      const mainRequest = lastMainRequest?.model === model.id ? lastMainRequest : undefined;
+      const mainRequest = model.api === "anthropic-messages" && lastMainRequest?.model === model.id
+        ? lastMainRequest
+        : undefined;
+      const responsesMainRequest = RESPONSES_APIS.has(model.api) && lastResponsesRequest?.model === model.id
+        ? lastResponsesRequest
+        : undefined;
+      const sessionId = ctx.sessionManager.getSessionId();
       const request = async () => {
-        const stream = provider.stream(
-          requestModel,
+        const stream = ctx.modelRegistry.streamSimple(
+          model,
           { systemPrompt: BTW_SYSTEM_PROMPT, messages },
           {
             signal,
-            apiKey: auth.apiKey,
-            headers: auth.headers,
-            env: auth.env,
+            sessionId,
             onPayload: mainRequest
               ? (payload: unknown) => (isAnthropicPayload(payload) ? reuseMainRequest(mainRequest, payload) : undefined)
-              : undefined,
+              : responsesMainRequest
+                ? (payload: unknown) =>
+                    (isResponsesPayload(payload) ? reuseResponsesMainRequest(responsesMainRequest, payload) : undefined)
+                : RESPONSES_APIS.has(model.api)
+                  ? (payload: unknown) => (isResponsesPayload(payload) ? { ...payload, tool_choice: "none" } : undefined)
+                  : undefined,
           },
         );
         let streamedText = "";
@@ -848,12 +923,16 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_provider_request", (event, ctx) => {
     if (ctx.model?.api === "anthropic-messages" && isAnthropicPayload(event.payload)) {
       lastMainRequest = event.payload;
+    } else if (ctx.model?.api && RESPONSES_APIS.has(ctx.model.api) && isResponsesPayload(event.payload)) {
+      lastResponsesRequest = event.payload;
     }
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     lastMainRequest = undefined;
+    lastResponsesRequest = undefined;
     closeDrawer();
+    btwTurns = [];
     ctx.ui.setWidget("side-session-launch", undefined);
   });
 

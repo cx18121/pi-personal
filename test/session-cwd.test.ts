@@ -17,7 +17,9 @@ import registerSessionCwd, {
 	executeSessionMove,
 	findActiveBackgroundWork,
 	formatCdCommand,
+	getCdCompletions,
 	parseCdArgs,
+	parseGitWorktreeList,
 	resolveTargetDirectory,
 	writeMovedSessionFile,
 } from "../extensions/session-cwd.js";
@@ -47,6 +49,71 @@ describe("parseCdArgs", () => {
 			path: '/tmp/dir "quoted"',
 			force: true,
 		});
+	});
+});
+
+describe("cd argument completions", () => {
+	test("parses git worktree porcelain output", () => {
+		const porcelain = [
+			"worktree /repos/app",
+			"HEAD abcdef",
+			"branch refs/heads/main",
+			"",
+			"worktree /repos/app.fix",
+			"HEAD 123456",
+			"branch refs/heads/fix/auth",
+			"",
+			"worktree /repos/app.detached",
+			"HEAD 999999",
+			"detached",
+		].join("\n");
+
+		expect(parseGitWorktreeList(porcelain)).toEqual([
+			{ path: "/repos/app", branch: "main" },
+			{ path: "/repos/app.fix", branch: "fix/auth" },
+			{ path: "/repos/app.detached", branch: undefined },
+		]);
+	});
+
+	test("suggests sibling worktrees, subdirectories, symlinks, and preserves --force", async () => {
+		const base = join(testRoot, "repo");
+		const sub = join(base, "packages");
+		const spaced = join(base, "my app");
+		const hidden = join(base, ".hidden");
+		const file = join(base, "README.md");
+		const sibling = join(testRoot, "repo.wt-auth");
+		const linked = join(base, "linked-dir");
+		await mkdir(sub, { recursive: true });
+		await mkdir(spaced, { recursive: true });
+		await mkdir(hidden, { recursive: true });
+		await mkdir(sibling, { recursive: true });
+		await writeFile(file, "hi");
+		await symlink(sibling, linked);
+
+		const worktrees = [
+			{ path: base, branch: "main" },
+			{ path: sibling, branch: "fix/auth" },
+		];
+
+		const initial = getCdCompletions("", base, worktrees)!;
+		expect(initial[0]).toMatchObject({ value: sibling, description: "worktree · fix/auth" });
+		expect(initial.map((item) => item.label)).toContain("../");
+		expect(initial.map((item) => item.label)).toContain("packages/");
+		expect(initial.map((item) => item.label)).toContain("linked-dir/");
+		expect(initial.map((item) => item.label)).not.toContain(".hidden/");
+		expect(initial.map((item) => item.label)).not.toContain("README.md/");
+
+		const spacedMatch = getCdCompletions("my", base, worktrees)!;
+		expect(spacedMatch).toEqual([{ value: '"my app/"', label: "my app/" }]);
+
+		const dotMatch = getCdCompletions(".", base, worktrees)!;
+		expect(dotMatch.map((item) => item.label)).toContain(".hidden/");
+
+		const branchMatch = getCdCompletions("auth", base, worktrees)!;
+		expect(branchMatch[0]).toMatchObject({ value: sibling, description: "worktree · fix/auth" });
+
+		const forced = getCdCompletions("--force pack", base, worktrees)!;
+		expect(forced).toEqual([{ value: "--force packages/", label: "packages/" }]);
 	});
 });
 

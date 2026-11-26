@@ -1,6 +1,7 @@
+import { readdirSync, statSync } from "node:fs";
 import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import {
 	CURRENT_SESSION_VERSION,
 	defineTool,
@@ -9,6 +10,7 @@ import {
 	type ExtensionCommandContext,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	findActiveBackgroundWork,
@@ -23,6 +25,154 @@ type SessionManagerView = ExtensionCommandContext["sessionManager"];
 export interface ParsedCdArgs {
 	path?: string;
 	force: boolean;
+}
+
+export interface WorktreeEntry {
+	path: string;
+	branch?: string;
+}
+
+export function parseGitWorktreeList(porcelain: string): WorktreeEntry[] {
+	const entries: WorktreeEntry[] = [];
+	for (const block of porcelain.trim().split(/\n\s*\n/)) {
+		if (!block.trim()) continue;
+		let wtPath: string | undefined;
+		let branch: string | undefined;
+		for (const line of block.split("\n")) {
+			if (line.startsWith("worktree ")) {
+				wtPath = line.slice("worktree ".length).trim();
+			} else if (line.startsWith("branch refs/heads/")) {
+				branch = line.slice("branch refs/heads/".length).trim();
+			}
+		}
+		if (wtPath) entries.push({ path: wtPath, branch });
+	}
+	return entries;
+}
+
+function shortenHome(fullPath: string): string {
+	const home = homedir();
+	if (fullPath === home) return "~";
+	if (fullPath.startsWith(`${home}/`)) return `~/${fullPath.slice(home.length + 1)}`;
+	return fullPath;
+}
+
+function formatCompletionValue(flagPrefix: string, pathValue: string): string {
+	const encoded = /\s/.test(pathValue) ? JSON.stringify(pathValue) : pathValue;
+	return `${flagPrefix}${encoded}`;
+}
+
+function isDirectoryEntry(parentDir: string, entry: { name: string; isDirectory: () => boolean; isSymbolicLink: () => boolean }): boolean {
+	if (entry.isDirectory()) return true;
+	if (!entry.isSymbolicLink()) return false;
+	try {
+		return statSync(join(parentDir, entry.name)).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+export function getCdCompletions(
+	argumentPrefix: string,
+	currentCwd: string,
+	worktrees: ReadonlyArray<WorktreeEntry> = [],
+	limit = 30,
+): AutocompleteItem[] | null {
+	let flagPrefix = "";
+	let pathPrefix = argumentPrefix;
+	const leadingFlag = pathPrefix.match(/^((?:--force|-f)\s+)/);
+	if (leadingFlag) {
+		flagPrefix = leadingFlag[1]!;
+		pathPrefix = pathPrefix.slice(flagPrefix.length);
+	}
+	const trimmedPath = pathPrefix.trimStart().replace(/^["']/, "");
+	const lowerQuery = trimmedPath.toLowerCase();
+
+	const items: AutocompleteItem[] = [];
+	const seenResolved = new Set<string>();
+	const resolvedCurrent = resolve(currentCwd);
+
+	// 1. Matching sibling Git worktrees first.
+	for (const wt of worktrees) {
+		const resolvedWt = resolve(wt.path);
+		if (resolvedWt === resolvedCurrent) continue;
+		const display = shortenHome(resolvedWt);
+		const matches =
+			!lowerQuery ||
+			display.toLowerCase().includes(lowerQuery) ||
+			resolvedWt.toLowerCase().includes(lowerQuery) ||
+			basename(resolvedWt).toLowerCase().includes(lowerQuery) ||
+			(wt.branch?.toLowerCase().includes(lowerQuery) ?? false);
+		if (!matches) continue;
+		seenResolved.add(resolvedWt);
+		items.push({
+			value: formatCompletionValue(flagPrefix, display),
+			label: display,
+			description: wt.branch ? `worktree · ${wt.branch}` : "worktree",
+		});
+		if (items.length >= limit) return items;
+	}
+
+	// 2. Directory completions relative to currentCwd, ~/, or absolute paths.
+	let displayBase = "";
+	let namePrefix = "";
+	let searchDir = resolvedCurrent;
+
+	if (trimmedPath === "~") {
+		displayBase = "~/";
+		searchDir = homedir();
+	} else if (trimmedPath.endsWith("/")) {
+		displayBase = trimmedPath;
+		searchDir = expandPathInput(trimmedPath, resolvedCurrent);
+	} else if (trimmedPath.includes("/")) {
+		const lastSlash = trimmedPath.lastIndexOf("/");
+		displayBase = trimmedPath.slice(0, lastSlash + 1);
+		namePrefix = trimmedPath.slice(lastSlash + 1);
+		searchDir = expandPathInput(displayBase, resolvedCurrent);
+	} else {
+		namePrefix = trimmedPath;
+		searchDir = resolvedCurrent;
+	}
+
+	const showDotfiles = namePrefix.startsWith(".");
+	const lowerName = namePrefix.toLowerCase();
+
+	if (!trimmedPath && resolvedCurrent !== resolve(resolvedCurrent, "..")) {
+		const parentResolved = resolve(resolvedCurrent, "..");
+		if (!seenResolved.has(parentResolved)) {
+			items.push({
+				value: formatCompletionValue(flagPrefix, "../"),
+				label: "../",
+				description: `parent (${basename(parentResolved) || "/"})`,
+			});
+		}
+	}
+
+	try {
+		const dirents = readdirSync(searchDir, { withFileTypes: true })
+			.filter((entry) => {
+				if (!showDotfiles && entry.name.startsWith(".")) return false;
+				if (!isDirectoryEntry(searchDir, entry)) return false;
+				return !lowerName || entry.name.toLowerCase().startsWith(lowerName);
+			})
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		for (const entry of dirents) {
+			if (items.length >= limit) break;
+			const resolvedCandidate = resolve(searchDir, entry.name);
+			if (seenResolved.has(resolvedCandidate)) continue;
+			seenResolved.add(resolvedCandidate);
+			const candidateDisplay = `${displayBase}${entry.name}/`;
+			items.push({
+				value: formatCompletionValue(flagPrefix, candidateDisplay),
+				label: candidateDisplay,
+			});
+		}
+	} catch {
+		// Unreadable or non-existent parent directory: return any worktree matches found.
+	}
+
+	return items.length > 0 ? items : null;
 }
 
 export interface MoveSessionOptions {
@@ -260,6 +410,24 @@ export async function executeSessionMove(
 export default function registerSessionCwd(pi: ExtensionAPI) {
 	let pendingToolMove: { targetDir: string; force: boolean } | undefined;
 	let activeToolMove: { targetDir: string; force: boolean } | undefined;
+	let currentCwd = process.cwd();
+	let cachedWorktrees: WorktreeEntry[] = [];
+
+	const refreshWorktrees = async (cwd: string) => {
+		try {
+			const res = await pi.exec("git", ["worktree", "list", "--porcelain"], { cwd, timeout: 2_000 });
+			if (cwd !== currentCwd) return;
+			cachedWorktrees = res.code === 0 ? parseGitWorktreeList(res.stdout) : [];
+		} catch {
+			if (cwd === currentCwd) cachedWorktrees = [];
+		}
+	};
+
+	pi.on("session_start", (_event, ctx) => {
+		currentCwd = ctx.cwd;
+		cachedWorktrees = [];
+		void refreshWorktrees(ctx.cwd);
+	});
 
 	pi.on("session_shutdown", () => {
 		pendingToolMove = undefined;
@@ -268,6 +436,7 @@ export default function registerSessionCwd(pi: ExtensionAPI) {
 
 	pi.registerCommand("cd", {
 		description: "Move this Pi session's working directory to another existing directory (--force stops active jobs)",
+		getArgumentCompletions: (prefix) => getCdCompletions(prefix, currentCwd, cachedWorktrees),
 		handler: async (args, ctx) => {
 			await ctx.waitForIdle();
 

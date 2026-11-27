@@ -24,8 +24,9 @@ fi
 
 node "$root/scripts/settings.mjs" "$profile"
 node "$root/scripts/patch-extension-peers.mjs"
-mkdir -p "$HOME/.pi/agent" "$HOME/.pi/agent/pi-codex-subagents/agents" "$HOME/.config/rpiv-ask-user-question"
+mkdir -p "$HOME/.pi/agent" "$HOME/.pi/agent/pi-codex-subagents/agents" "$HOME/.config/rpiv-ask-user-question" "$HOME/.claude"
 ln -sfn "$root/modules/cxstack/AGENTS.md" "$HOME/.pi/agent/AGENTS.md"
+ln -sfn "$root/modules/cxstack/AGENTS.md" "$HOME/.claude/CLAUDE.md"
 ln -sfn "$root/config/compact-tools.json" "$HOME/.pi/agent/compact-tools.json"
 ln -sfn "$root/config/pi-codex-subagents/config.json" "$HOME/.pi/agent/pi-codex-subagents/config.json"
 ln -sfn "$root/config/pi-codex-subagents/SYSTEM.md" "$HOME/.pi/agent/pi-codex-subagents/SYSTEM.md"
